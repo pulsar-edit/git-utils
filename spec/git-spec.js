@@ -6,6 +6,7 @@ const wrench = require('wrench')
 const temp = require('temp')
 const _ = require('underscore')
 const {it, fit, beforeEach} = require('./async-spec-helper-functions')
+const {Worker} = require('worker_threads')
 
 describe('git', () => {
   let repo
@@ -1136,6 +1137,35 @@ describe('git', () => {
       return Math.floor(Math.random() * max)
     }
   })
+})
+
+describe('Context Aware', () => {
+  it('should handle opening the same repository from different contexts', async () => {
+    // Based on it('returns the path to the .git directory')
+    let currentGitPath = path.join(path.dirname(__dirname), '.git/')
+    if (process.platform === 'win32') { currentGitPath = currentGitPath.replace(/\\/g, '/') }
+    const promises = [];
+    for (let i = 1; i <= 5; ++i) {
+      promises.push(new Promise((resolve, reject) => {
+        const worker = new Worker('./spec/worker.cjs');
+        let repositoryPath;
+        worker.on('message', function(message) {
+          repositoryPath = message;
+        });
+        worker.on('exit', function(code) {
+          if (code === 0) {
+            resolve(repositoryPath)
+          }
+          else {
+            reject(`Worker error ${code}`)
+          }
+        });
+      }))
+    }
+    const responses = await Promise.all(promises)
+    const c = currentGitPath;
+    expect(responses).toEqual([c, c, c, c, c])
+  });
 })
 
 function execCommands (commands, callback) {

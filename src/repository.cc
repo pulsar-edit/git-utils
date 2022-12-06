@@ -24,7 +24,7 @@
 #include <map>
 #include <utility>
 
-void Repository::Init(Local<Object> target) {
+NAN_MODULE_INIT(Repository::Init) {
   Nan::HandleScope scope;
   git_libgit2_init();
 
@@ -68,7 +68,7 @@ void Repository::Init(Local<Object> target) {
             Nan::GetFunction(newTemplate).ToLocalChecked());
 }
 
-NODE_MODULE(git, Repository::Init)
+NAN_MODULE_WORKER_ENABLED(git, Repository::Init)
 
 NAN_METHOD(Repository::New) {
   Nan::HandleScope scope;

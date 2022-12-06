@@ -31,7 +31,7 @@ using namespace v8;  // NOLINT
 
 class Repository : public Nan::ObjectWrap {
  public:
-  static void Init(Local<Object> target);
+  static NAN_MODULE_INIT(Init);
 
  private:
   static NAN_METHOD(New);
