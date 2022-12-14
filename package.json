@@ -41,7 +41,6 @@
   },
   "scripts": {
     "lint": "standard src spec",
-    "test": "jasmine-focused --captureExceptions spec",
-    "prepare": "git submodule update --init --recursive"
+    "test": "jasmine-focused --captureExceptions spec"
   }
 }
