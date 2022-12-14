@@ -68,7 +68,9 @@ void Repository::Init(Local<Object> target) {
             Nan::GetFunction(newTemplate).ToLocalChecked());
 }
 
-NODE_MODULE(git, Repository::Init)
+NODE_MODULE_INIT() {
+  Repository::Init(exports);
+}
 
 NAN_METHOD(Repository::New) {
   Nan::HandleScope scope;
