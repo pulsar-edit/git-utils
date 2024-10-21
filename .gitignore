@@ -4,3 +4,4 @@
 *.log
 *~
 .node-version
+.cache

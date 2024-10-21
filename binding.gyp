@@ -5,15 +5,22 @@
       'dependencies': [
         'libgit2'
       ],
-      'include_dirs': [ '<!(node -e "require(\'nan\')")' ],
+      'include_dirs': [
+          "<!(node -p \"require('node-addon-api').include_dir\")",
+      ],
+      'defines': [
+        "NAPI_DISABLE_CPP_EXCEPTIONS"
+      ],
       'sources': [
-        'src/repository.cc'
+        'src/binding.cc'
       ],
       'conditions': [
         ['OS=="win"', {
           'msvs_disabled_warnings': [
-            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of data
-            4530,  # C++ exception handler used, but unwind semantics are not enabled.
+            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of
+                   # data
+            4530,  # C++ exception handler used, but unwind semantics are not
+                   # enabled.
             4506,  # no definition for inline function
             4267,  # conversion from 'size_t' to 'int', possible loss of data
             4344,  # behavior change
@@ -23,7 +30,8 @@
             '-Wno-missing-field-initializers',
           ],
           'cflags_cc!': [
-            '-fno-delete-null-pointer-checks', # clang-3.4 doesn't understand this flag and fails.
+            # clang-3.4 doesn't understand this flag and fails.
+            '-fno-delete-null-pointer-checks',
           ],
           'xcode_settings': {
             'WARNING_CFLAGS': [
@@ -374,11 +382,14 @@
           },
           'msvs_disabled_warnings': [
             4005,  # macro redefinition
-            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of data
+            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of
+                   # data
             4267,  # conversion from 'size_t' to 'int', possible loss of data
             4090,  # different 'volatile' qualifiers
-            4047,  # 'volatile void *' differs in levels of indirection from 'int'
-            4013,  # 'InterlockedDecrement' undefined; assuming extern returning int
+            4047,  # 'volatile void *' differs in levels of indirection from
+                   # 'int'
+            4013,  # 'InterlockedDecrement' undefined; assuming extern
+                   # returning int
           ],
           'sources': [
             'deps/libgit2/src/net.c',
@@ -513,7 +524,8 @@
       'conditions': [
         ['OS=="win"', {
           'msvs_disabled_warnings': [
-            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of data
+            4244,  # conversion from 'ssize_t' to 'int32_t', possible loss of
+                   # data
           ],
         }],
       ],

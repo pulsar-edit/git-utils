@@ -1059,36 +1059,52 @@ describe('git', () => {
     })
   })
 
-  describe('.submoduleForPath(path)', () => {
-    beforeEach(() => {
-      const repoDirectory = temp.mkdirSync('node-git-repo-')
-      const submoduleDirectory = temp.mkdirSync('node-git-repo-')
-      wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(repoDirectory, '.git'))
-      wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(submoduleDirectory, '.git'))
+  if (process.env.CI) {
+    // NOTE: Testing a submodule requires that you be able to add one defined
+    // at a path on disk. This is disallowed by default these days as a
+    // security risk. There's a config setting to allow it, but we don't seem
+    // to be able to opt into it on a per-repo basis.
+    //
+    // So this test is disabled unless we're running in CI, where the
+    // environment is transient and will be thrown away anyway. If you want to
+    // test this locally, save your config value for `protocol.file.allow`
+    // beforehand and restore it when you're done testing.
+    describe('.submoduleForPath(path)', () => {
+      beforeEach(() => {
+        const repoDirectory = temp.mkdirSync('node-git-repo-')
+        const submoduleDirectory = temp.mkdirSync('node-git-repo-')
+        wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(repoDirectory, '.git'))
+        wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(submoduleDirectory, '.git'))
 
-      const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-      execCommands([`cd ${repoDirectory}`, `git submodule add ${submoduleDirectory} sub`], gitCommandHandler)
+        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
+        execCommands([
+          `git config --global protocol.file.allow always`,
+          `cd ${repoDirectory}`,
+          `git submodule add ${submoduleDirectory} sub`
+        ], gitCommandHandler)
 
-      waitsFor(() => gitCommandHandler.callCount === 1)
+        waitsFor(() => gitCommandHandler.callCount === 1)
 
-      runs(() => repo = git.open(repoDirectory))
+        runs(() => repo = git.open(repoDirectory))
+      })
+
+      fit('returns the repository for the path', () => {
+        expect(repo.submoduleForPath()).toBe(null)
+        expect(repo.submoduleForPath(null)).toBe(null)
+        expect(repo.submoduleForPath('')).toBe(null)
+        expect(repo.submoduleForPath('sub1')).toBe(null)
+
+        let submoduleRepoPath = path.join(repo.getPath(), 'modules', 'sub/')
+        if (process.platform === 'win32') { submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/') }
+
+        expect(repo.submoduleForPath('sub').getPath()).toBe(submoduleRepoPath)
+        expect(repo.submoduleForPath('sub/').getPath()).toBe(submoduleRepoPath)
+        expect(repo.submoduleForPath('sub/a').getPath()).toBe(submoduleRepoPath)
+        expect(repo.submoduleForPath('sub/a/b/c/d').getPath()).toBe(submoduleRepoPath)
+      })
     })
 
-    it('returns the repository for the path', () => {
-      expect(repo.submoduleForPath()).toBe(null)
-      expect(repo.submoduleForPath(null)).toBe(null)
-      expect(repo.submoduleForPath('')).toBe(null)
-      expect(repo.submoduleForPath('sub1')).toBe(null)
-
-      let submoduleRepoPath = path.join(repo.getPath(), 'modules', 'sub/')
-      if (process.platform === 'win32') { submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/') }
-
-      expect(repo.submoduleForPath('sub').getPath()).toBe(submoduleRepoPath)
-      expect(repo.submoduleForPath('sub/').getPath()).toBe(submoduleRepoPath)
-      expect(repo.submoduleForPath('sub/a').getPath()).toBe(submoduleRepoPath)
-      expect(repo.submoduleForPath('sub/a/b/c/d').getPath()).toBe(submoduleRepoPath)
-    })
-  })
+  }
 
   describe('.add(path)', () => {
     beforeEach(() => {
