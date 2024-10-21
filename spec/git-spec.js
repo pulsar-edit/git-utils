@@ -1059,7 +1059,7 @@ describe('git', () => {
     })
   })
 
-  // if (process.env.CI) {
+  if (process.env.CI) {
     // NOTE: Testing a submodule requires that you be able to add one defined
     // at a path on disk. This is disallowed by default these days as a
     // security risk. There's a config setting to allow it, but we don't seem
@@ -1088,7 +1088,7 @@ describe('git', () => {
         runs(() => repo = git.open(repoDirectory))
       })
 
-      fit('returns the repository for the path', () => {
+      it('returns the repository for the path', () => {
         expect(repo.submoduleForPath()).toBe(null)
         expect(repo.submoduleForPath(null)).toBe(null)
         expect(repo.submoduleForPath('')).toBe(null)
@@ -1104,7 +1104,7 @@ describe('git', () => {
       })
     })
 
-  // }
+  }
 
   describe('.add(path)', () => {
     beforeEach(() => {
