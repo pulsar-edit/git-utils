@@ -41,6 +41,6 @@
   },
   "scripts": {
     "lint": "standard src spec",
-    "test": "jasmine-focused --captureExceptions spec"
+    "test": "jasmine spec/*-spec.js"
   }
 }
