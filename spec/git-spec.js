@@ -5,7 +5,6 @@ const {exec} = require('child_process')
 const wrench = require('wrench')
 const temp = require('temp')
 const _ = require('underscore')
-const {it, fit, beforeEach} = require('./async-spec-helper-functions')
 
 describe('git', () => {
   let repo
@@ -302,14 +301,10 @@ describe('git', () => {
     })
 
     describe('when a path is deleted and staged', () => {
-      it('returns true ', () => {
+      it('returns true ', async () => {
         expect(repo.isPathStaged('a.txt')).toBe(false)
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([`cd ${repoDirectory}`, 'git rm -f a.txt'], gitCommandHandler)
-
-        waitsFor(() => gitCommandHandler.callCount === 1)
-
-        runs(() => expect(repo.isPathStaged('a.txt')).toBe(true))
+        await execCommands([`cd ${repoDirectory}`, 'git rm -f a.txt'])
+        expect(repo.isPathStaged('a.txt')).toBe(true)
       })
     })
   })
@@ -367,19 +362,14 @@ describe('git', () => {
       })
 
       // in this test, we need to fake a commit and try to switch to a new branch
-      it('does not check a branch out if the dirty tree interferes', () => {
+      it('does not check a branch out if the dirty tree interferes', async () => {
         fs.writeFileSync(path.join(repo.getWorkingDirectory(), 'README.md'), 'great words', 'utf8')
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([`cd ${repoDirectory}`, 'git add .', "git commit -m 'comitting'"], gitCommandHandler)
+        await execCommands([`cd ${repoDirectory}`, 'git add .', "git commit -m 'comitting'"])
 
-        waitsFor(() => gitCommandHandler.callCount === 1)
-
-        runs(() => {
-          expect(repo.checkoutReference('refs/heads/getHeadOriginal')).toBe(true)
-          fs.writeFileSync(path.join(repo.getWorkingDirectory(), 'README.md'), 'more words', 'utf8')
-          expect(repo.checkoutReference('refs/heads/master')).toBe(false)
-          expect(repo.getHead()).toBe('refs/heads/getHeadOriginal')
-        })
+        expect(repo.checkoutReference('refs/heads/getHeadOriginal')).toBe(true)
+        fs.writeFileSync(path.join(repo.getWorkingDirectory(), 'README.md'), 'more words', 'utf8')
+        expect(repo.checkoutReference('refs/heads/master')).toBe(false)
+        expect(repo.getHead()).toBe('refs/heads/getHeadOriginal')
       })
 
       it('does check a branch out if the dirty tree does not interfere', () => {
@@ -530,19 +520,14 @@ describe('git', () => {
     })
 
     describe('when the path is staged', () => {
-      it('returns the index blob contents', () => {
+      it('returns the index blob contents', async () => {
         expect(repo.getIndexBlob('a.txt')).toBe('first line\n')
 
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
         fs.writeFileSync(filePath, 'changing\na.txt', 'utf8')
         expect(repo.getIndexBlob('a.txt')).toBe('first line\n')
-
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([`cd ${repoDirectory}`, 'git add a.txt'], gitCommandHandler)
-
-        waitsFor(() => gitCommandHandler.callCount === 1)
-
-        runs(() => expect(repo.getIndexBlob('a.txt')).toBe('changing\na.txt'))
+        await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
+        expect(repo.getIndexBlob('a.txt')).toBe('changing\na.txt')
       })
     })
 
@@ -817,7 +802,7 @@ describe('git', () => {
     })
 
     describe('useIndex options', () => {
-      it('uses the index version instead of the HEAD version for diffs', () => {
+      it('uses the index version instead of the HEAD version for diffs', async () => {
         const repoDirectory = temp.mkdirSync('node-git-repo-')
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
         repo = git.open(repoDirectory)
@@ -828,18 +813,16 @@ describe('git', () => {
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
         fs.writeFileSync(filePath, 'first line is different', 'utf8')
 
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([`cd ${repoDirectory}`, 'git add a.txt'], gitCommandHandler)
+        let resolve;
+        let promise = new Promise(r => resolve = r)
 
-        waitsFor(() => gitCommandHandler.callCount === 1)
+        await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
 
-        runs(() => {
-          diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: true})
-          expect(diffs.length).toBe(0)
+        diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: true})
+        expect(diffs.length).toBe(0)
 
-          diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: false})
-          expect(diffs.length).toBe(1)
-        })
+        diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: false})
+        expect(diffs.length).toBe(1)
       })
     })
   })
@@ -956,7 +939,7 @@ describe('git', () => {
     })
 
     describe('useIndex options', () => {
-      it('uses the index version instead of the HEAD version for diffs', () => {
+      it('uses the index version instead of the HEAD version for diffs', async () => {
         const repoDirectory = temp.mkdirSync('node-git-repo-')
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
         repo = git.open(repoDirectory)
@@ -967,18 +950,13 @@ describe('git', () => {
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
         fs.writeFileSync(filePath, 'first line is different', 'utf8')
 
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([`cd ${repoDirectory}`, 'git add a.txt'], gitCommandHandler)
+        await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
 
-        waitsFor(() => gitCommandHandler.callCount === 1)
+        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: true})
+        expect(diffs.length).toBe(0)
 
-        runs(() => {
-          diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: true})
-          expect(diffs.length).toBe(0)
-
-          diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: false})
-          expect(diffs.length).toBe(3)
-        })
+        diffs = repo.getLineDiffDetails('a.txt', 'first line is different', {useIndex: false})
+        expect(diffs.length).toBe(3)
       })
     })
   })
@@ -1070,22 +1048,19 @@ describe('git', () => {
     // test this locally, save your config value for `protocol.file.allow`
     // beforehand and restore it when you're done testing.
     describe('.submoduleForPath(path)', () => {
-      beforeEach(() => {
+      beforeEach(async () => {
         const repoDirectory = temp.mkdirSync('node-git-repo-')
         const submoduleDirectory = temp.mkdirSync('node-git-repo-')
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(repoDirectory, '.git'))
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures', 'master.git'), path.join(submoduleDirectory, '.git'))
 
-        const gitCommandHandler = jasmine.createSpy('gitCommandHandler')
-        execCommands([
+        await execCommands([
           `git config --global protocol.file.allow always`,
           `cd ${repoDirectory}`,
           `git submodule add ${submoduleDirectory} sub`
-        ], gitCommandHandler)
+        ])
 
-        waitsFor(() => gitCommandHandler.callCount === 1)
-
-        runs(() => repo = git.open(repoDirectory))
+        repo = git.open(repoDirectory)
       })
 
       it('returns the repository for the path', () => {
@@ -1154,12 +1129,14 @@ describe('git', () => {
   })
 })
 
-function execCommands (commands, callback) {
+function execCommands (commands) {
   let command
   if (process.platform === 'win32') {
     command = commands.join(' & ')
   } else {
     command = commands.join(' && ')
   }
-  exec(command, callback)
+  return new Promise((resolve) => {
+    exec(command, resolve)
+  })
 }

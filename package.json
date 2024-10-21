@@ -29,7 +29,7 @@
   ],
   "main": "./src/git.js",
   "devDependencies": {
-    "jasmine-focused": "^1.0.4",
+    "jasmine": "^5.4.0",
     "node-addon-api": "^8.2.1",
     "standard": "^10.0.3",
     "temp": "~0.9.4",
