@@ -4,3 +4,6 @@
 *.log
 *~
 .node-version
+.cache
+.tool-versions
+compile_commands.json

@@ -1,5 +1,5 @@
 {
-  "name": "git-utils",
+  "name": "@pulsar-edit/git-utils",
   "description": "A package for using Git repositories",
   "version": "5.7.3",
   "license": "MIT",
