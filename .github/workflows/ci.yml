@@ -18,6 +18,8 @@ jobs:
       with:
         node-version: 20
     - name: Install module
-      run: npm install
+      run: |
+        npm run prepare
+        npm install
     - name: Run tests
       run: npm test
