@@ -41,6 +41,7 @@
   },
   "scripts": {
     "lint": "standard src spec",
-    "test": "jasmine spec/*-spec.js"
+    "test": "jasmine spec/*-spec.js",
+    "prepare": "git submodule update --init --recursive"
   }
 }
