@@ -1,7 +1,7 @@
 {
   "name": "@pulsar-edit/git-utils",
   "description": "A package for using Git repositories",
-  "version": "6.0.0",
+  "version": "7.0.0",
   "license": "MIT",
   "author": {
     "name": "Kevin Sawicki",
