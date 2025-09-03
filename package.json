@@ -15,10 +15,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/git-utils/git-utils.git"
+    "url": "https://github.com/pulsar-edit/git-utils.git"
   },
   "bugs": {
-    "url": "https://github.com/git-utils/git-utils/issues"
+    "url": "https://github.com/pulsar-edit/git-utils/issues"
   },
   "homepage": "http://atom.github.io/git-utils",
   "keywords": [
