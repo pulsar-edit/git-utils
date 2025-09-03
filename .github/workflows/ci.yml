@@ -16,7 +16,6 @@ jobs:
         node-version: 16
     - name: Install
       run: |
-        npm run prepare
         npm install
     - name: Test
       run: |

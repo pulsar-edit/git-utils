@@ -15,10 +15,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/atom/git-utils.git"
+    "url": "https://github.com/git-utils/git-utils.git"
   },
   "bugs": {
-    "url": "https://github.com/atom/git-utils/issues"
+    "url": "https://github.com/git-utils/git-utils/issues"
   },
   "homepage": "http://atom.github.io/git-utils",
   "keywords": [
@@ -41,7 +41,6 @@
   },
   "scripts": {
     "lint": "standard src spec",
-    "test": "jasmine-focused --captureExceptions spec",
-    "prepare": "git submodule update --init --recursive"
+    "test": "jasmine-focused --captureExceptions spec"
   }
 }
