@@ -5,9 +5,14 @@
       'dependencies': [
         'libgit2'
       ],
-      'include_dirs': ['<!(node -e "require(\'nan\')")'],
+      'include_dirs': [
+          "<!(node -p \"require('node-addon-api').include_dir\")",
+      ],
+      'defines': [
+        "NAPI_DISABLE_CPP_EXCEPTIONS"
+      ],
       'sources': [
-        'src/repository.cc'
+        'src/binding.cc'
       ],
       'conditions': [
         ['OS=="win"', {
@@ -25,8 +30,8 @@
             '-Wno-missing-field-initializers',
           ],
           'cflags_cc!': [
-            '-fno-delete-null-pointer-checks',  # clang-3.4 doesn't understand
-                                                # this flag and fails.
+            # clang-3.4 doesn't understand this flag and fails.
+            '-fno-delete-null-pointer-checks',
           ],
           'xcode_settings': {
             'WARNING_CFLAGS': [
