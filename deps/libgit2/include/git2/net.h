@@ -13,12 +13,13 @@
 
 /**
  * @file git2/net.h
- * @brief Git networking declarations
+ * @brief Low-level networking functionality
  * @ingroup Git
  * @{
  */
 GIT_BEGIN_DECL
 
+/** Default git protocol port number */
 #define GIT_DEFAULT_PORT "9418"
 
 /**
@@ -49,11 +50,7 @@ struct git_remote_head {
 	char *symref_target;
 };
 
-/**
- * Callback for listing the remote heads
- */
-typedef int GIT_CALLBACK(git_headlist_cb)(git_remote_head *rhead, void *payload);
-
 /** @} */
 GIT_END_DECL
+
 #endif

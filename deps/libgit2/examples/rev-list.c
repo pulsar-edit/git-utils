@@ -15,23 +15,32 @@
 
 #include "common.h"
 
-static int revwalk_parseopts(git_repository *repo, git_revwalk *walk, int nopts, char **opts);
+#include <assert.h>
+
+static int revwalk_parse_options(git_sort_t *sort, struct args_info *args);
+static int revwalk_parse_revs(git_repository *repo, git_revwalk *walk, struct args_info *args);
 
 int lg2_rev_list(git_repository *repo, int argc, char **argv)
 {
+	struct args_info args = ARGS_INFO_INIT;
 	git_revwalk *walk;
 	git_oid oid;
-	char buf[GIT_OID_HEXSZ+1];
+	git_sort_t sort;
+	char buf[GIT_OID_SHA1_HEXSIZE+1];
+
+	check_lg2(revwalk_parse_options(&sort, &args), "parsing options", NULL);
 
 	check_lg2(git_revwalk_new(&walk, repo), "allocating revwalk", NULL);
-	check_lg2(revwalk_parseopts(repo, walk, argc-1, argv+1), "parsing options", NULL);
+	git_revwalk_sorting(walk, sort);
+	check_lg2(revwalk_parse_revs(repo, walk, &args), "parsing revs", NULL);
 
 	while (!git_revwalk_next(&oid, walk)) {
 		git_oid_fmt(buf, &oid);
-		buf[GIT_OID_HEXSZ] = '\0';
+		buf[GIT_OID_SHA1_HEXSIZE] = '\0';
 		printf("%s\n", buf);
 	}
 
+	git_revwalk_free(walk);
 	return 0;
 }
 
@@ -64,7 +73,7 @@ static int push_range(git_repository *repo, git_revwalk *walk, const char *range
 	if ((error = git_revparse(&revspec, repo, range)))
 		return error;
 
-	if (revspec.flags & GIT_REVPARSE_MERGE_BASE) {
+	if (revspec.flags & GIT_REVSPEC_MERGE_BASE) {
 		/* TODO: support "<commit>...<commit>" */
 		return GIT_EINVALIDSPEC;
 	}
@@ -80,33 +89,66 @@ out:
 	return error;
 }
 
-static int revwalk_parseopts(git_repository *repo, git_revwalk *walk, int nopts, char **opts)
+static void print_usage(void)
 {
-	int hide, i, error;
-	unsigned int sorting = GIT_SORT_NONE;
+	fprintf(stderr, "rev-list [--git-dir=dir] [--topo-order|--date-order] [--reverse] <revspec>\n");
+	exit(-1);
+}
+
+static int revwalk_parse_options(git_sort_t *sort, struct args_info *args)
+{
+	assert(sort && args);
+	*sort = GIT_SORT_NONE;
+
+	if (args->argc < 1)
+		print_usage();
+
+	for (args->pos = 1; args->pos < args->argc; ++args->pos) {
+		const char *curr = args->argv[args->pos];
+
+		if (!strcmp(curr, "--topo-order")) {
+			*sort |= GIT_SORT_TOPOLOGICAL;
+		} else if (!strcmp(curr, "--date-order")) {
+			*sort |= GIT_SORT_TIME;
+		} else if (!strcmp(curr, "--reverse")) {
+			*sort |= (*sort & ~GIT_SORT_REVERSE) ^ GIT_SORT_REVERSE;
+		} else {
+			break;
+		}
+	}
+	return 0;
+}
+
+static int revwalk_parse_revs(git_repository *repo, git_revwalk *walk, struct args_info *args)
+{
+	int hide, error;
+	git_oid oid;
 
 	hide = 0;
-	for (i = 0; i < nopts; i++) {
-		if (!strcmp(opts[i], "--topo-order")) {
-			sorting = GIT_SORT_TOPOLOGICAL | (sorting & GIT_SORT_REVERSE);
-			git_revwalk_sorting(walk, sorting);
-		} else if (!strcmp(opts[i], "--date-order")) {
-			sorting = GIT_SORT_TIME | (sorting & GIT_SORT_REVERSE);
-			git_revwalk_sorting(walk, sorting);
-		} else if (!strcmp(opts[i], "--reverse")) {
-			sorting = (sorting & ~GIT_SORT_REVERSE)
-			    | ((sorting & GIT_SORT_REVERSE) ? 0 : GIT_SORT_REVERSE);
-			git_revwalk_sorting(walk, sorting);
-		} else if (!strcmp(opts[i], "--not")) {
+	for (; args->pos < args->argc; ++args->pos) {
+		const char *curr = args->argv[args->pos];
+
+		if (!strcmp(curr, "--not")) {
 			hide = !hide;
-		} else if (opts[i][0] == '^') {
-			if ((error = push_spec(repo, walk, opts[i] + 1, !hide)))
+		} else if (curr[0] == '^') {
+			if ((error = push_spec(repo, walk, curr + 1, !hide)))
 				return error;
-		} else if (strstr(opts[i], "..")) {
-			if ((error = push_range(repo, walk, opts[i], hide)))
+		} else if (strstr(curr, "..")) {
+			if ((error = push_range(repo, walk, curr, hide)))
 				return error;
 		} else {
-			if ((error = push_spec(repo, walk, opts[i], hide)))
+			if (push_spec(repo, walk, curr, hide) == 0)
+				continue;
+
+#ifdef GIT_EXPERIMENTAL_SHA256
+			if ((error = git_oid_fromstr(&oid, curr, GIT_OID_SHA1)))
+				return error;
+#else
+			if ((error = git_oid_fromstr(&oid, curr)))
+				return error;
+#endif
+
+			if ((error = push_commit(walk, &oid, hide)))
 				return error;
 		}
 	}

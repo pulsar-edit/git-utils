@@ -1,21 +1,5 @@
 #include "common.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#ifdef _WIN32
-# include <io.h>
-# include <Windows.h>
-
-# define open _open
-# define read _read
-# define close _close
-
-#define ssize_t unsigned int
-#else
-# include <unistd.h>
-#endif
-
 /*
  * This could be run in the main loop whilst the application waits for
  * the indexing to finish in a worker thread
@@ -23,7 +7,7 @@
 static int index_cb(const git_indexer_progress *stats, void *data)
 {
 	(void)data;
-	printf("\rProcessing %d of %d", stats->indexed_objects, stats->total_objects);
+	printf("\rProcessing %u of %u", stats->indexed_objects, stats->total_objects);
 
 	return 0;
 }
@@ -33,7 +17,6 @@ int lg2_index_pack(git_repository *repo, int argc, char **argv)
 	git_indexer *idx;
 	git_indexer_progress stats = {0, 0};
 	int error;
-	char hash[GIT_OID_HEXSZ + 1] = {0};
 	int fd;
 	ssize_t read_bytes;
 	char buf[512];
@@ -45,10 +28,17 @@ int lg2_index_pack(git_repository *repo, int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (git_indexer_new(&idx, ".", 0, NULL, NULL) < 0) {
+#ifdef GIT_EXPERIMENTAL_SHA256
+	error = git_indexer_new(&idx, ".", NULL);
+#else
+	error = git_indexer_new(&idx, ".", 0, NULL, NULL);
+#endif
+
+	if (error < 0) {
 		puts("bad idx");
 		return -1;
 	}
+
 
 	if ((fd = open(argv[1], 0)) < 0) {
 		perror("open");
@@ -75,10 +65,9 @@ int lg2_index_pack(git_repository *repo, int argc, char **argv)
 	if ((error = git_indexer_commit(idx, &stats)) < 0)
 		goto cleanup;
 
-	printf("\rIndexing %d of %d\n", stats.indexed_objects, stats.total_objects);
+	printf("\rIndexing %u of %u\n", stats.indexed_objects, stats.total_objects);
 
-	git_oid_fmt(hash, git_indexer_hash(idx));
-	puts(hash);
+	puts(git_indexer_name(idx));
 
  cleanup:
 	close(fd);

@@ -27,7 +27,7 @@
  */
 
 /** Forward declarations of helpers */
-struct opts {
+struct init_opts {
 	int no_options;
 	int quiet;
 	int bare;
@@ -38,11 +38,11 @@ struct opts {
 	const char *dir;
 };
 static void create_initial_commit(git_repository *repo);
-static void parse_opts(struct opts *o, int argc, char *argv[]);
+static void parse_opts(struct init_opts *o, int argc, char *argv[]);
 
 int lg2_init(git_repository *repo, int argc, char *argv[])
 {
-	struct opts o = { 1, 0, 0, 0, GIT_REPOSITORY_INIT_SHARED_UMASK, 0, 0, 0 };
+	struct init_opts o = { 1, 0, 0, 0, GIT_REPOSITORY_INIT_SHARED_UMASK, 0, 0, 0 };
 
 	parse_opts(&o, argc, argv);
 
@@ -123,14 +123,14 @@ int lg2_init(git_repository *repo, int argc, char *argv[])
  */
 static void create_initial_commit(git_repository *repo)
 {
-	git_signature *sig;
+	git_signature *author_sig = NULL, *committer_sig = NULL;
 	git_index *index;
 	git_oid tree_id, commit_id;
 	git_tree *tree;
 
 	/** First use the config to initialize a commit signature for the user. */
 
-	if (git_signature_default(&sig, repo) < 0)
+	if ((git_signature_default_from_env(&author_sig, &committer_sig, repo) < 0))
 		fatal("Unable to create a commit signature.",
 		      "Perhaps 'user.name' and 'user.email' are not set");
 
@@ -162,14 +162,15 @@ static void create_initial_commit(git_repository *repo)
 	 */
 
 	if (git_commit_create_v(
-			&commit_id, repo, "HEAD", sig, sig,
+			&commit_id, repo, "HEAD", author_sig, committer_sig,
 			NULL, "Initial commit", tree, 0) < 0)
 		fatal("Could not create the initial commit", NULL);
 
 	/** Clean up so we don't leak memory. */
 
 	git_tree_free(tree);
-	git_signature_free(sig);
+	git_signature_free(author_sig);
+	git_signature_free(committer_sig);
 }
 
 static void usage(const char *error, const char *arg)
@@ -210,7 +211,7 @@ static uint32_t parse_shared(const char *shared)
 	return 0;
 }
 
-static void parse_opts(struct opts *o, int argc, char *argv[])
+static void parse_opts(struct init_opts *o, int argc, char *argv[])
 {
 	struct args_info args = ARGS_INFO_INIT;
 	const char *sharedarg;
@@ -244,5 +245,5 @@ static void parse_opts(struct opts *o, int argc, char *argv[])
 	}
 
 	if (!o->dir)
-		usage("must specify directory to init", NULL);
+		usage("must specify directory to init", "");
 }

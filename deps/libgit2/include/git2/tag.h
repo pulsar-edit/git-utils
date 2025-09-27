@@ -15,7 +15,7 @@
 
 /**
  * @file git2/tag.h
- * @brief Git tag parsing routines
+ * @brief A (nearly) immutable pointer to a commit; useful for versioning
  * @defgroup git_tag Git tag management
  * @ingroup Git
  * @{
@@ -217,7 +217,7 @@ GIT_EXTERN(int) git_tag_annotation_create(
  * @param force Overwrite existing tags
  * @return 0 on success; error code otherwise
  */
-GIT_EXTERN(int) git_tag_create_frombuffer(
+GIT_EXTERN(int) git_tag_create_from_buffer(
 	git_oid *oid,
 	git_repository *repo,
 	const char *buffer,
@@ -335,6 +335,7 @@ typedef int GIT_CALLBACK(git_tag_foreach_cb)(const char *name, git_oid *oid, voi
  * @param repo Repository
  * @param callback Callback function
  * @param payload Pointer to callback data (optional)
+ * @return 0 on success or an error code
  */
 GIT_EXTERN(int) git_tag_foreach(
 	git_repository *repo,
@@ -362,9 +363,23 @@ GIT_EXTERN(int) git_tag_peel(
  *
  * @param out Pointer to store the copy of the tag
  * @param source Original tag to copy
+ * @return 0
  */
 GIT_EXTERN(int) git_tag_dup(git_tag **out, git_tag *source);
 
+/**
+ * Determine whether a tag name is valid, meaning that (when prefixed
+ * with `refs/tags/`) that it is a valid reference name, and that any
+ * additional tag name restrictions are imposed (eg, it cannot start
+ * with a `-`).
+ *
+ * @param valid output pointer to set with validity of given tag name
+ * @param name a tag name to test
+ * @return 0 on success or an error code
+ */
+GIT_EXTERN(int) git_tag_name_is_valid(int *valid, const char *name);
+
 /** @} */
 GIT_END_DECL
+
 #endif

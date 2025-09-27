@@ -7,14 +7,16 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <unistd.h>
 
 #include "git2.h"
 #include "git2/sys/transport.h"
+#include "futils.h"
+
+#include "standalone_driver.h"
+#include "fuzzer_utils.h"
 
 #define UNUSED(x) (void)(x)
 
@@ -131,7 +133,7 @@ static int fuzzer_subtransport_new(
 	return 0;
 }
 
-int fuzzer_subtransport_cb(
+static int fuzzer_subtransport_cb(
 	git_smart_subtransport **out,
 	git_transport *owner,
 	void *payload)
@@ -146,7 +148,7 @@ int fuzzer_subtransport_cb(
 	return 0;
 }
 
-int fuzzer_transport_cb(git_transport **out, git_remote *owner, void *param)
+static int fuzzer_transport_cb(git_transport **out, git_remote *owner, void *param)
 {
 	git_smart_subtransport_definition def = {
 		fuzzer_subtransport_cb,
@@ -156,18 +158,8 @@ int fuzzer_transport_cb(git_transport **out, git_remote *owner, void *param)
 	return git_transport_smart(out, owner, &def);
 }
 
-void fuzzer_git_abort(const char *op)
-{
-	const git_error *err = git_error_last();
-	fprintf(stderr, "unexpected libgit error: %s: %s\n",
-		op, err ? err->message : "<none>");
-	abort();
-}
-
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
-	char tmp[] = "/tmp/git2.XXXXXX";
-
 	UNUSED(argc);
 	UNUSED(argv);
 
@@ -177,12 +169,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 	if (git_libgit2_opts(GIT_OPT_SET_PACK_MAX_OBJECTS, 10000000) < 0)
 		abort();
 
-	if (mkdtemp(tmp) != tmp)
-		abort();
-
-	if (git_repository_init(&repo, tmp, 1) < 0)
-		fuzzer_git_abort("git_repository_init");
-
+	repo = fuzzer_repo_init();
 	return 0;
 }
 

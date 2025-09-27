@@ -7,16 +7,14 @@
  * a Linking Exception. For full terms see the included COPYING file.
  */
 
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <limits.h>
-#include <unistd.h>
 
 #include "git2.h"
 #include "git2/sys/mempack.h"
+#include "common.h"
+#include "str.h"
 
-#define UNUSED(x) (void)(x)
+#include "standalone_driver.h"
 
 static git_odb *odb = NULL;
 static git_odb_backend *mempack = NULL;
@@ -27,8 +25,9 @@ static const unsigned int base_obj_len = 2;
 
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
-	UNUSED(argc);
-	UNUSED(argv);
+	GIT_UNUSED(argc);
+	GIT_UNUSED(argv);
+
 	if (git_libgit2_init() < 0) {
 		fprintf(stderr, "Failed to initialize libgit2\n");
 		abort();
@@ -37,10 +36,19 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 		fprintf(stderr, "Failed to limit maximum pack object count\n");
 		abort();
 	}
+
+#ifdef GIT_EXPERIMENTAL_SHA256
+	if (git_odb_new(&odb, NULL) < 0) {
+		fprintf(stderr, "Failed to create the odb\n");
+		abort();
+	}
+#else
 	if (git_odb_new(&odb) < 0) {
 		fprintf(stderr, "Failed to create the odb\n");
 		abort();
 	}
+#endif
+
 	if (git_mempack_new(&mempack) < 0) {
 		fprintf(stderr, "Failed to create the mempack\n");
 		abort();
@@ -54,12 +62,12 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-	git_indexer *indexer = NULL;
 	git_indexer_progress stats = {0, 0};
+	git_indexer *indexer = NULL;
+	git_str path = GIT_STR_INIT;
+	git_oid oid;
 	bool append_hash = false;
-	git_oid id;
-	char hash[GIT_OID_HEXSZ + 1] = {0};
-	char path[PATH_MAX];
+	int error;
 
 	if (size == 0)
 		return 0;
@@ -70,12 +78,18 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	}
 	git_mempack_reset(mempack);
 
-	if (git_odb_write(&id, odb, base_obj, base_obj_len, GIT_OBJECT_BLOB) < 0) {
+	if (git_odb_write(&oid, odb, base_obj, base_obj_len, GIT_OBJECT_BLOB) < 0) {
 		fprintf(stderr, "Failed to add an object to the odb\n");
 		abort();
 	}
 
-	if (git_indexer_new(&indexer, ".", 0, odb, NULL) < 0) {
+#ifdef GIT_EXPERIMENTAL_SHA256
+	error = git_indexer_new(&indexer, ".", NULL);
+#else
+	error = git_indexer_new(&indexer, ".", 0, odb, NULL);
+#endif
+
+	if (error < 0) {
 		fprintf(stderr, "Failed to create the indexer: %s\n",
 			git_error_last()->message);
 		abort();
@@ -92,31 +106,38 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	if (git_indexer_append(indexer, data, size, &stats) < 0)
 		goto cleanup;
 	if (append_hash) {
-		git_oid oid;
+#ifdef GIT_EXPERIMENTAL_SHA256
+		if (git_odb_hash(&oid, data, size, GIT_OBJECT_BLOB, GIT_OID_SHA1) < 0) {
+			fprintf(stderr, "Failed to compute the SHA1 hash\n");
+			abort();
+		}
+#else
 		if (git_odb_hash(&oid, data, size, GIT_OBJECT_BLOB) < 0) {
 			fprintf(stderr, "Failed to compute the SHA1 hash\n");
 			abort();
 		}
-		if (git_indexer_append(indexer, &oid, sizeof(oid), &stats) < 0) {
+#endif
+
+		if (git_indexer_append(indexer, &oid.id, GIT_OID_SHA1_SIZE, &stats) < 0) {
 			goto cleanup;
 		}
 	}
 	if (git_indexer_commit(indexer, &stats) < 0)
 		goto cleanup;
 
-	/*
-	 * We made it! We managed to produce a valid packfile.
-	 * Let's clean it up.
-	 */
-	git_oid_fmt(hash, git_indexer_hash(indexer));
-	printf("Generated packfile %s\n", hash);
-	snprintf(path, sizeof(path), "pack-%s.idx", hash);
-	unlink(path);
-	snprintf(path, sizeof(path), "pack-%s.pack", hash);
-	unlink(path);
+	if (git_str_printf(&path, "pack-%s.idx", git_indexer_name(indexer)) < 0)
+		goto cleanup;
+	p_unlink(git_str_cstr(&path));
+
+	git_str_clear(&path);
+
+	if (git_str_printf(&path, "pack-%s.pack", git_indexer_name(indexer)) < 0)
+		goto cleanup;
+	p_unlink(git_str_cstr(&path));
 
 cleanup:
 	git_mempack_reset(mempack);
 	git_indexer_free(indexer);
+	git_str_dispose(&path);
 	return 0;
 }

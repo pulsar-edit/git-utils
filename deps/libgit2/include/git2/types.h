@@ -63,6 +63,9 @@ typedef int64_t git_time_t; /**< time in seconds from epoch */
 
 #endif
 
+/** The maximum size of an object */
+typedef uint64_t git_object_size_t;
+
 #include "buffer.h"
 #include "oid.h"
 
@@ -75,16 +78,21 @@ typedef enum {
 	GIT_OBJECT_BLOB =      3, /**< A file revision object. */
 	GIT_OBJECT_TAG =       4, /**< An annotated tag object. */
 	GIT_OBJECT_OFS_DELTA = 6, /**< A delta, base is given by an offset. */
-	GIT_OBJECT_REF_DELTA = 7, /**< A delta, base is given by object id. */
+	GIT_OBJECT_REF_DELTA = 7  /**< A delta, base is given by object id. */
 } git_object_t;
 
-/** An open object database handle. */
+/**
+ * An object database stores the objects (commit, trees, blobs, tags,
+ * etc) for a repository.
+ */
 typedef struct git_odb git_odb;
 
 /** A custom backend in an ODB */
 typedef struct git_odb_backend git_odb_backend;
 
-/** An object read from the ODB */
+/**
+ * A "raw" object read from the object database.
+ */
 typedef struct git_odb_object git_odb_object;
 
 /** A stream to read/write from the ODB */
@@ -93,11 +101,20 @@ typedef struct git_odb_stream git_odb_stream;
 /** A stream to write a packfile to the ODB */
 typedef struct git_odb_writepack git_odb_writepack;
 
+/** a writer for multi-pack-index files. */
+typedef struct git_midx_writer git_midx_writer;
+
 /** An open refs database handle. */
 typedef struct git_refdb git_refdb;
 
 /** A custom backend for refs */
 typedef struct git_refdb_backend git_refdb_backend;
+
+/** A git commit-graph */
+typedef struct git_commit_graph git_commit_graph;
+
+/** a writer for commit-graph files. */
+typedef struct git_commit_graph_writer git_commit_graph_writer;
 
 /**
  * Representation of an existing git repository,
@@ -182,7 +199,18 @@ typedef struct git_reference_iterator  git_reference_iterator;
 /** Transactional interface to references */
 typedef struct git_transaction git_transaction;
 
-/** Annotated commits, the input to merge and rebase. */
+/**
+ * Annotated commits are commits with additional metadata about how the
+ * commit was resolved, which can be used for maintaining the user's
+ * "intent" through commands like merge and rebase.
+ *
+ * For example, if a user wants to conceptually "merge `HEAD`", then the
+ * commit portion of an annotated commit will point to the `HEAD` commit,
+ * but the _annotation_ will denote the ref `HEAD`. This allows git to
+ * perform the internal bookkeeping so that the system knows both the
+ * content of what is being merged but also how the content was looked up
+ * so that it can be recorded in the reflog appropriately.
+ */
 typedef struct git_annotated_commit git_annotated_commit;
 
 /** Representation of a status collection */
@@ -196,14 +224,14 @@ typedef enum {
 	GIT_REFERENCE_INVALID  = 0, /**< Invalid reference */
 	GIT_REFERENCE_DIRECT   = 1, /**< A reference that points at an object id */
 	GIT_REFERENCE_SYMBOLIC = 2, /**< A reference that points at another reference */
-	GIT_REFERENCE_ALL      = GIT_REFERENCE_DIRECT | GIT_REFERENCE_SYMBOLIC,
+	GIT_REFERENCE_ALL      = GIT_REFERENCE_DIRECT | GIT_REFERENCE_SYMBOLIC
 } git_reference_t;
 
 /** Basic type of any Git branch. */
 typedef enum {
 	GIT_BRANCH_LOCAL = 1,
 	GIT_BRANCH_REMOTE = 2,
-	GIT_BRANCH_ALL = GIT_BRANCH_LOCAL|GIT_BRANCH_REMOTE,
+	GIT_BRANCH_ALL = GIT_BRANCH_LOCAL|GIT_BRANCH_REMOTE
 } git_branch_t;
 
 /** Valid modes for index and tree entries. */
@@ -213,7 +241,7 @@ typedef enum {
 	GIT_FILEMODE_BLOB                = 0100644,
 	GIT_FILEMODE_BLOB_EXECUTABLE     = 0100755,
 	GIT_FILEMODE_LINK                = 0120000,
-	GIT_FILEMODE_COMMIT              = 0160000,
+	GIT_FILEMODE_COMMIT              = 0160000
 } git_filemode_t;
 
 /**
@@ -224,7 +252,7 @@ typedef struct git_refspec git_refspec;
 
 /**
  * Git's idea of a remote repository. A remote can be anonymous (in
- * which case it does not have backing configuration entires).
+ * which case it does not have backing configuration entries).
  */
 typedef struct git_remote git_remote;
 
@@ -245,67 +273,9 @@ typedef struct git_remote_head git_remote_head;
 typedef struct git_remote_callbacks git_remote_callbacks;
 
 /**
- * Type for messages delivered by the transport.  Return a negative value
- * to cancel the network operation.
- *
- * @param str The message from the transport
- * @param len The length of the message
- * @param payload Payload provided by the caller
- */
-typedef int GIT_CALLBACK(git_transport_message_cb)(const char *str, int len, void *payload);
-
-
-/**
- * Type of host certificate structure that is passed to the check callback
- */
-typedef enum git_cert_t {
-	/**
-	 * No information about the certificate is available. This may
-	 * happen when using curl.
-	 */
-	GIT_CERT_NONE,
-        /**
-         * The `data` argument to the callback will be a pointer to
-         * the DER-encoded data.
-         */
-	GIT_CERT_X509,
-        /**
-         * The `data` argument to the callback will be a pointer to a
-         * `git_cert_hostkey` structure.
-         */
-	GIT_CERT_HOSTKEY_LIBSSH2,
-	/**
-	 * The `data` argument to the callback will be a pointer to a
-	 * `git_strarray` with `name:content` strings containing
-	 * information about the certificate. This is used when using
-	 * curl.
-	 */
-	GIT_CERT_STRARRAY,
-} git_cert_t;
-
-/**
  * Parent type for `git_cert_hostkey` and `git_cert_x509`.
  */
-typedef struct {
-	/**
-	 * Type of certificate. A `GIT_CERT_` value.
-	 */
-	git_cert_t cert_type;
-} git_cert;
-
-/**
- * Callback for the user's custom certificate checks.
- *
- * @param cert The host certificate
- * @param valid Whether the libgit2 checks (OpenSSL or WinHTTP) think
- * this certificate is valid
- * @param host Hostname of the host libgit2 connected to
- * @param payload Payload provided by the caller
- * @return 0 to proceed with the connection, < 0 to fail the connection
- *         or > 0 to indicate that the callback refused to act and that
- *         the existing validity determination should be honored
- */
-typedef int GIT_CALLBACK(git_transport_certificate_check_cb)(git_cert *cert, int valid, const char *host, void *payload);
+typedef struct git_cert git_cert;
 
 /**
  * Opaque structure representing a submodule.
@@ -380,7 +350,7 @@ typedef enum {
 	GIT_SUBMODULE_IGNORE_NONE      = 1,  /**< any change or untracked == dirty */
 	GIT_SUBMODULE_IGNORE_UNTRACKED = 2,  /**< dirty if tracked files change */
 	GIT_SUBMODULE_IGNORE_DIRTY     = 3,  /**< only dirty if HEAD moved */
-	GIT_SUBMODULE_IGNORE_ALL       = 4,  /**< never dirty */
+	GIT_SUBMODULE_IGNORE_ALL       = 4   /**< never dirty */
 } git_submodule_ignore_t;
 
 /**
@@ -396,7 +366,7 @@ typedef enum {
 typedef enum {
 	GIT_SUBMODULE_RECURSE_NO = 0,
 	GIT_SUBMODULE_RECURSE_YES = 1,
-	GIT_SUBMODULE_RECURSE_ONDEMAND = 2,
+	GIT_SUBMODULE_RECURSE_ONDEMAND = 2
 } git_submodule_recurse_t;
 
 typedef struct git_writestream git_writestream;

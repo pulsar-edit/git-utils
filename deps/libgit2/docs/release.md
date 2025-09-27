@@ -1,6 +1,6 @@
 # Releasing the library
 
-We have three kinds of releases: "full" releases, maintenance releases and security releases. Full ones release the state of the `master` branch whereas maintenance releases provide bugfixes building on top of the currently released series. Security releases are also for the current series but only contain security fixes on top of the previous release.
+We have three kinds of releases: "full" releases, maintenance releases and security releases. Full ones release the state of the `main` branch whereas maintenance releases provide bugfixes building on top of the currently released series. Security releases are also for the current series but only contain security fixes on top of the previous release.
 
 ## Full release
 
@@ -40,7 +40,7 @@ followed by the three sections in the changelog. For release candidates we can a
 
 During the freeze, and certainly after the first release candidate, any bindings the core team work with should be updated in order to discover any issues that might come up with the multitude of approaches to memory management, embedding or linking.
 
-Create a branch `maint/v0.X` at the current state of `master` after you've created the tag. This will be used for maintenance releases and lets our dependents track the latest state of the series.
+Create a branch `maint/v0.X` at the current state of `main` after you've created the tag. This will be used for maintenance releases and lets our dependents track the latest state of the series.
 
 ## Maintenance release
 
@@ -68,7 +68,7 @@ Here we do not use release candidates as the changes are supposed to be small an
 
 This is the same as a maintenance release, except that the fix itself will most likely be developed in a private repository and will only be visible to a select group of people until the release.
 
-Everything else remains the same. Occasionally we might opt to backport a security fix to the previous series, based on how recently we started the new series and how serious the issue is.
+We have committed to providing security fixes for the latest two released versions.  E.g. if the latest version is v0.28.x, then we will provide security fixes for both v0.28.x and v0.27.y.
 
 ## Updating documentation
 
@@ -76,8 +76,8 @@ We use docurium to generate our documentation. It is a tool written in ruby whic
 
     gem install docurium
 
-and run it against our description file with the tip of master checked out.
+and run it against our description file with the tip of `main` checked out.
 
     cm doc api.docurium
 
-It will start up a few proceses and write out the results as a new commit onto the `gh-pages` branch. That can be pushed to GitHub to update what will show up on our documentation reference site.
+It will start up a few processes and write out the results as a new commit onto the `gh-pages` branch. That can be pushed to GitHub to update what will show up on our documentation reference site.
