@@ -5,21 +5,28 @@ on:
   pull_request:
 
 jobs:
- Build:
-  runs-on: ubuntu-latest
-  env:
-    CC: clang
-    CXX: clang++
-    npm_config_clang: 1
-  steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      name: Install Node
-      with:
-        node-version: 20
-    - name: Install module
-      run: |
-        npm run prepare
-        npm install
-    - name: Run tests
-      run: npm test
+  Build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
+          - os: windows-latest
+            env: {}
+    env: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        name: Install Node
+        with:
+          node-version: 20
+      - name: Install module
+        run: |
+          npm run prepare
+          npm install
+      - name: Run tests
+        run: npm test
