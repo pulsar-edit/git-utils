@@ -17,6 +17,11 @@ jobs:
               npm_config_clang: 1
           - os: windows-latest
             env: {}
+          - os: macos-latest
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
     env: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
