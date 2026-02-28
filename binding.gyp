@@ -50,7 +50,6 @@
         'LIBGIT2_NO_FEATURES_H',
         'GIT_SHA1_COLLISIONDETECT',
         'GIT_SHA256_BUILTIN',
-        'GIT_REGEX_REGCOMP',
         'GIT_HTTPPARSER_BUILTIN',
         # Node's util.h may be accidentally included so use this to guard
         # against compilation error.
@@ -373,6 +372,7 @@
       'conditions': [
         ['OS=="mac"', {
           'defines': [
+            'GIT_REGEX_REGCOMP',
             'GIT_USE_STAT_MTIMESPEC',
             'GIT_IO_POLL',
           ],
@@ -382,6 +382,7 @@
             '-w',
           ],
           'defines': [
+            'GIT_REGEX_REGCOMP',
             'GIT_USE_STAT_MTIM',
             'GIT_IO_POLL',
           ]
@@ -390,7 +391,7 @@
           'defines': [
             'GIT_WINHTTP',
             'GIT_IO_WSAPOLL',
-            # GIT_REGEX_BUILTIN already set globally above
+            'GIT_REGEX_PCRE'
           ],
           'dependencies': [
             'pcre',
@@ -591,8 +592,14 @@
         # git2_util.h includes git2_features.h (cmake-generated) unless this
         # is defined. xdiff pulls in git2_util.h via regexp.h, so we need it.
         'LIBGIT2_NO_FEATURES_H',
-        # regexp.h requires a regex backend define; use the bundled pcre.
-        'GIT_REGEX_REGCOMP',
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'defines': ['GIT_REGEX_PCRE'],
+          'include_dirs': ['deps/libgit2/deps/pcre'],
+        }, {
+          'defines': ['GIT_REGEX_REGCOMP'],
+        }],
       ],
       'include_dirs': [
         'deps/libgit2/include',
