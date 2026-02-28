@@ -241,8 +241,9 @@ Napi::Value Repository::GetConfigValue(const Napi::CallbackInfo& info) {
       configKey.c_str()
     ) == GIT_OK
   ) {
+    auto result = Napi::String::New(env, configValue);
     git_config_free(config);
-    return Napi::String::New(env, configValue);
+    return result;
   } else {
     git_config_free(config);
     return env.Null();
