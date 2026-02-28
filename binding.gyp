@@ -595,7 +595,7 @@
       ],
       'conditions': [
         ['OS=="win"', {
-          'defines': ['GIT_REGEX_PCRE'],
+          'defines': ['GIT_REGEX_PCRE', 'GIT_WIN32'],
           'include_dirs': ['deps/libgit2/deps/pcre'],
         }, {
           'defines': ['GIT_REGEX_REGCOMP'],
