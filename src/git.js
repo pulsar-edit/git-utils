@@ -317,7 +317,13 @@ function openRepository (repositoryPath, search) {
     if (symlink) {
       const workingDirectory = repository.getWorkingDirectory()
       while (!isRootPath(repositoryPath)) {
-        if (realpath(repositoryPath) === workingDirectory) {
+        let realpathResult = realpath(repositoryPath)
+        if (process.platform === 'win32') {
+          // `getWorkingDirectory` always uses forward slashes as path
+          // separators.
+          realpathResult = realpathResult.replace(/\\/g, '/')
+        }
+        if (realpathResult === workingDirectory) {
           repository.openedWorkingDirectory = repositoryPath
           break
         }

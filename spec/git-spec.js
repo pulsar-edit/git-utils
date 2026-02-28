@@ -1132,7 +1132,7 @@ describe('git', () => {
 function execCommands (commands) {
   let command
   if (process.platform === 'win32') {
-    command = commands.join(' & ')
+    command = commands.map(cmd => /^cd\s/.test(cmd) ? `cd /d ${cmd.slice(3)}` : cmd).join(' & ')
   } else {
     command = commands.join(' && ')
   }
