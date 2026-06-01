@@ -10,6 +10,11 @@ jobs:
     strategy:
       matrix:
         include:
+          - os: ubuntu-24.04-arm
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
           - os: ubuntu-latest
             env:
               CC: clang
