@@ -152,24 +152,24 @@ Repository.prototype.checkoutReference = function (branch, create) {
   return this.checkoutRef(branch, create)
 }
 
-Repository.prototype.relativize = function (path) {
+Repository.prototype.relativize = function (filePath) {
   let workingDirectory
-  if (!path) return path
+  if (!filePath) return filePath
 
   if (process.platform === 'win32') {
-    path = path.replace(/\\/g, '/')
+    filePath = filePath.replace(/\\/g, '/')
   } else {
-    if (path[0] !== '/') return path
+    if (filePath[0] !== '/') return filePath
   }
 
   if (this.caseInsensitiveFs) {
-    const lowerCasePath = path.toLowerCase()
+    const lowerCasePath = filePath.toLowerCase()
 
     workingDirectory = this.getWorkingDirectory()
     if (workingDirectory) {
       workingDirectory = workingDirectory.toLowerCase()
       if (lowerCasePath.startsWith(`${workingDirectory}/`)) {
-        return path.substring(workingDirectory.length + 1)
+        return filePath.substring(workingDirectory.length + 1)
       } else if (lowerCasePath === workingDirectory) {
         return ''
       }
@@ -178,7 +178,7 @@ Repository.prototype.relativize = function (path) {
     if (this.openedWorkingDirectory) {
       workingDirectory = this.openedWorkingDirectory.toLowerCase()
       if (lowerCasePath.startsWith(`${workingDirectory}/`)) {
-        return path.substring(workingDirectory.length + 1)
+        return filePath.substring(workingDirectory.length + 1)
       } else if (lowerCasePath === workingDirectory) {
         return ''
       }
@@ -186,23 +186,23 @@ Repository.prototype.relativize = function (path) {
   } else {
     workingDirectory = this.getWorkingDirectory()
     if (workingDirectory) {
-      if (path.startsWith(`${workingDirectory}/`)) {
-        return path.substring(workingDirectory.length + 1)
-      } else if (path === workingDirectory) {
+      if (filePath.startsWith(`${workingDirectory}/`)) {
+        return filePath.substring(workingDirectory.length + 1)
+      } else if (filePath === workingDirectory) {
         return ''
       }
     }
 
     if (this.openedWorkingDirectory) {
-      if (path.startsWith(`${this.openedWorkingDirectory}/`)) {
-        return path.substring(this.openedWorkingDirectory.length + 1)
-      } else if (path === this.openedWorkingDirectory) {
+      if (filePath.startsWith(`${this.openedWorkingDirectory}/`)) {
+        return filePath.substring(this.openedWorkingDirectory.length + 1)
+      } else if (filePath === this.openedWorkingDirectory) {
         return ''
       }
     }
   }
 
-  return path
+  return filePath
 }
 
 Repository.prototype.submoduleForPath = function (path) {
@@ -310,14 +310,27 @@ function isRootPath (repositoryPath) {
 function openRepository (repositoryPath, search) {
   const symlink = realpath(repositoryPath) !== repositoryPath
 
-  if (process.platform === 'win32') repositoryPath = repositoryPath.replace(/\\/g, '/')
+  if (process.platform === 'win32') {
+    repositoryPath = repositoryPath.replace(/\\/g, '/')
+  }
   const repository = new Repository(repositoryPath, search)
   if (repository.exists()) {
     repository.caseInsensitiveFs = fs.isCaseInsensitive()
     if (symlink) {
       const workingDirectory = repository.getWorkingDirectory()
+      // On Windows, normalize both sides through realpath so that 8.3 short
+      // names (e.g., RUNNER~1) and path separator differences don't prevent
+      // the comparison from matching. Compare case-insensitively because
+      // Windows paths are case-insensitive.
+      const normalizedWorkingDir = process.platform === 'win32'
+        ? realpath(workingDirectory).replace(/\\/g, '/').toLowerCase()
+        : workingDirectory
       while (!isRootPath(repositoryPath)) {
-        if (realpath(repositoryPath) === workingDirectory) {
+        let realpathResult = realpath(repositoryPath)
+        if (process.platform === 'win32') {
+          realpathResult = realpathResult.replace(/\\/g, '/').toLowerCase()
+        }
+        if (realpathResult === normalizedWorkingDir) {
           repository.openedWorkingDirectory = repositoryPath
           break
         }

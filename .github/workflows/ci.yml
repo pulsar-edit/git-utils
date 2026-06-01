@@ -1,23 +1,44 @@
 name: CI
 
-on: [push]
+on:
+  push:
+  pull_request:
 
 jobs:
- Build:
-  runs-on: ubuntu-latest
-  env:
-      CC: clang
-      CXX: clang++
-      npm_config_clang: 1
-  steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@v2
-      with:
-        node-version: 16
-    - name: Install
-      run: |
-        npm install
-    - name: Test
-      run: |
-        npm run lint
-        npm run test
+  Build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
+          - os: ubuntu-latest
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
+          - os: windows-latest
+            env: {}
+          - os: macos-latest
+            env:
+              CC: clang
+              CXX: clang++
+              npm_config_clang: 1
+    env: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        name: Install Node
+        with:
+          node-version: 20
+      - name: Install module
+        run: |
+          npm run prepare
+          npm install
+      - name: Run tests
+        run: npm test
