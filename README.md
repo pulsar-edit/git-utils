@@ -202,6 +202,16 @@ Get the target of the given reference.
 
 Returns the string target of the given reference.
 
+### Repository.getRemoteHead([remoteName])
+
+Get the branch that a remote's `HEAD` points to — i.e., the remote's default
+branch. This is the equivalent of `git symbolic-ref refs/remotes/<remoteName>/HEAD`.
+
+`remoteName` - The string name of the remote (default: `origin`).
+
+Returns the string reference name (e.g. `refs/remotes/origin/master`), or
+`null` if the remote has no `HEAD` reference.
+
 ### Repository.getShortHead()
 
 Get a possibly shortened version of value returns by `getHead()`. This will
@@ -219,6 +229,16 @@ include ignored paths.
 
 Returns an integer status number if a path is specified and returns an object
 with path keys and integer status values if no path is specified.
+
+### Repository.getSymbolicRefTarget(ref)
+
+Get the name of the reference that a symbolic reference points to, without
+resolving it any further. This is the equivalent of `git symbolic-ref <ref>`.
+
+`ref` - The string reference.
+
+Returns the string name of the reference that `ref` points to, or `null` if
+`ref` does not exist or is not a symbolic reference.
 
 ### Repository.getUpstreamBranch([branch])
 
