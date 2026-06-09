@@ -48,6 +48,7 @@ private:
   Napi::Value GetStatus(const Napi::CallbackInfo& info);
   Napi::Value GetStatusAsync(const Napi::CallbackInfo& info);
   Napi::Value GetStatusForPath(const Napi::CallbackInfo& info);
+  Napi::Value GetSymbolicRefTarget(const Napi::CallbackInfo& info);
   Napi::Value CheckoutHead(const Napi::CallbackInfo& info);
   Napi::Value GetReferenceTarget(const Napi::CallbackInfo& info);
   Napi::Value GetDiffStats(const Napi::CallbackInfo& info);

@@ -813,9 +813,6 @@ describe('git', () => {
         const filePath = path.join(repo.getWorkingDirectory(), 'a.txt')
         fs.writeFileSync(filePath, 'first line is different', 'utf8')
 
-        let resolve;
-        let promise = new Promise(r => resolve = r)
-
         await execCommands([`cd ${repoDirectory}`, 'git add a.txt'])
 
         diffs = repo.getLineDiffs('a.txt', 'first line is different', {useIndex: true})
@@ -1034,6 +1031,55 @@ describe('git', () => {
       workingDirectory = repo.getWorkingDirectory()
 
       expect(repo.isWorkingDirectory(workingDirectory.toUpperCase())).toBe(true)
+    })
+  })
+
+  describe('.getSymbolicRefTarget(refName)', () => {
+    describe('when the reference is symbolic', () => {
+      it('returns the name of the reference it points to', () => {
+        repo = git.open(path.join(__dirname, 'fixtures/master.git'))
+        expect(repo.getSymbolicRefTarget('HEAD')).toBe('refs/heads/master')
+
+        repo = git.open(path.join(__dirname, 'fixtures/references.git'))
+        expect(repo.getSymbolicRefTarget('refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/master')
+        expect(repo.getSymbolicRefTarget('refs/remotes/upstream/HEAD')).toBe('refs/remotes/origin/master')
+      })
+    })
+
+    describe('when the reference is direct (non-symbolic)', () => {
+      it('returns null', () => {
+        repo = git.open(path.join(__dirname, 'fixtures/master.git'))
+        expect(repo.getSymbolicRefTarget('refs/heads/master')).toBe(null)
+      })
+    })
+
+    describe('when the reference does not exist', () => {
+      it('returns null', () => {
+        repo = git.open(path.join(__dirname, 'fixtures/master.git'))
+        expect(repo.getSymbolicRefTarget('refs/heads/nonexistent')).toBe(null)
+      })
+    })
+  })
+
+  describe('.getRemoteHead([remoteName])', () => {
+    let repo2
+    beforeEach(() => {
+      repo = git.open(path.join(__dirname, 'fixtures/references.git'))
+      repo2 = git.open(path.join(__dirname, 'fixtures/develop.git'))
+    })
+
+    it('defaults to the "origin" remote', () => {
+      expect(repo.getRemoteHead()).toBe('refs/remotes/origin/master')
+    })
+
+    it("returns the branch that the given remote's HEAD points to", () => {
+      expect(repo.getRemoteHead('origin')).toBe('refs/remotes/origin/master')
+      expect(repo.getRemoteHead('upstream')).toBe('refs/remotes/origin/master')
+      expect(repo2.getRemoteHead('origin')).toBe('refs/remotes/origin/develop')
+    })
+
+    it('returns null when the remote has no HEAD reference', () => {
+      expect(repo.getRemoteHead('nonexistent')).toBe(null)
     })
   })
 

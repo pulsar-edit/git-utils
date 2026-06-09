@@ -109,6 +109,10 @@ Repository.prototype.getUpstreamBranch = function (branch) {
   return `refs/remotes/${branchRemote}/${shortBranchMerge}`
 }
 
+Repository.prototype.getRemoteHead = function (remoteName = 'origin') {
+  return this.getSymbolicRefTarget(`refs/remotes/${remoteName}/HEAD`)
+}
+
 Repository.prototype.getAheadBehindCount = function (branch = 'HEAD') {
   if (branch !== 'HEAD' && !branch.startsWith('refs/heads/')) {
     branch = `refs/heads/${branch}`

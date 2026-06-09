@@ -412,6 +412,30 @@ Napi::Value Repository::GetStatusForPath(const Napi::CallbackInfo& info) {
   }
 }
 
+Napi::Value Repository::GetSymbolicRefTarget(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  Napi::HandleScope scope(env);
+
+  if (info.Length() < 1) return env.Null();
+  CHECK(info[0].IsString(), "Expected string as first argument", env);
+
+  std::string refName(info[0].As<Napi::String>());
+  git_reference* ref = NULL;
+
+  if (git_reference_lookup(&ref, GetRepository(info), refName.c_str()) != GIT_OK) {
+    return env.Null();
+  }
+
+  Napi::Value result = env.Null();
+  if (git_reference_type(ref) == GIT_REFERENCE_SYMBOLIC) {
+    const char* target = git_reference_symbolic_target(ref);
+    if (target) result = Napi::String::New(env, target);
+  }
+
+  git_reference_free(ref);
+  return result;
+}
+
 Napi::Value Repository::CheckoutHead(const Napi::CallbackInfo& info) {
   auto env = info.Env();
   Napi::HandleScope scope(env);
@@ -1210,6 +1234,7 @@ void Repository::Init(Napi::Env env, Napi::Object exports) {
       InstanceMethod<&Repository::GetStatus>("getStatus", napi_default_method),
       InstanceMethod<&Repository::GetStatusForPath>("getStatusForPath", napi_default_method),
       InstanceMethod<&Repository::GetStatusAsync>("getStatusAsync", napi_default_method),
+      InstanceMethod<&Repository::GetSymbolicRefTarget>("getSymbolicRefTarget", napi_default_method),
       InstanceMethod<&Repository::CheckoutHead>("checkoutHead", napi_default_method),
       InstanceMethod<&Repository::GetReferenceTarget>("getReferenceTarget", napi_default_method),
       InstanceMethod<&Repository::GetDiffStats>("getDiffStats", napi_default_method),
