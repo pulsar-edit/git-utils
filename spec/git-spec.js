@@ -1035,14 +1035,8 @@ describe('git', () => {
       repo.caseInsensitiveFs = true
       workingDirectory = repo.getWorkingDirectory()
 
-      console.log('Comparing repo directory:', repoDirectory, 'to working directory:', workingDirectory);
-
-      console.log('Just a HUNCH:', fs.realpathSync.native(repoDirectory), 'from', repoDirectory);
-      // if (process.platform === 'win32') {
-        expect(repo.isWorkingDirectory(repoDirectory)).toBe(true)
-        expect(repo.isWorkingDirectory(workingDirectory.toUpperCase())).toBe(true)
-      // }
-
+      expect(repo.isWorkingDirectory(repoDirectory)).toBe(true)
+      expect(repo.isWorkingDirectory(workingDirectory.toUpperCase())).toBe(true)
     })
   })
 
@@ -1128,7 +1122,9 @@ describe('git', () => {
         expect(repo.submoduleForPath('sub1')).toBe(null)
 
         let submoduleRepoPath = path.join(repo.getPath(), 'modules', 'sub/')
-        if (process.platform === 'win32') { submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/') }
+        if (process.platform === 'win32') {
+          submoduleRepoPath = submoduleRepoPath.replace(/\\/g, '/')
+        }
 
         expect(repo.submoduleForPath('sub').getPath()).toBe(submoduleRepoPath)
         expect(repo.submoduleForPath('sub/').getPath()).toBe(submoduleRepoPath)
