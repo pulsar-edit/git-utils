@@ -9,9 +9,7 @@ const _ = require('underscore')
 describe('git', () => {
   let repo
 
-  afterEach(() => {
-    if (repo) repo.release()
-  })
+  afterEach(() => repo?.release())
 
   describe('.open(path)', () => {
     describe('when the path is a repository', () => {
@@ -982,15 +980,10 @@ describe('git', () => {
         const repoDirectory = fs.realpathSync(temp.mkdirSync('node-git-repo-'))
         const linkDirectory = path.join(fs.realpathSync(temp.mkdirSync('node-git-repo-')), 'link')
         wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
-        console.log('SYMLINKING', repoDirectory, 'TO', linkDirectory);
         fs.symlinkSync(repoDirectory, linkDirectory)
 
-        console.log('!!! so the realPath of linkDirectory:', linkDirectory, 'should be', fs.realpathSync(linkDirectory));
-
         repo = git.open(linkDirectory)
-        console.log('relativizing:', path.join(repoDirectory, 'test1'));
         expect(repo.relativize(path.join(repoDirectory, 'test1'))).toBe('test1')
-        console.log('DOES THIS PATH EXIST?!?', fs.existsSync(path.join(linkDirectory, 'test2')));
         expect(repo.relativize(path.join(linkDirectory, 'test2'))).toBe('test2')
         expect(repo.relativize(path.join(linkDirectory, 'test2/test3'))).toBe('test2/test3')
         expect(repo.relativize('test2/test3')).toBe('test2/test3')
