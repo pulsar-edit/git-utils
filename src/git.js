@@ -1,6 +1,16 @@
+// @ts-check
 const path = require('path')
 const fs = require('fs-plus')
-const {Repository} = require('../build/Release/git.node')
+
+/**
+ * @template T
+ * @typedef {(err: Error | null, result: T) => void} NodeCallback
+ */
+
+/** @type {{ Repository: typeof import('./git').Repository }} */
+// @ts-expect-error
+const bundle = require('../build/Release/git.node')
+const { Repository } = bundle
 
 const statusIndexNew = 1 << 0
 const statusIndexModified = 1 << 1
@@ -31,6 +41,77 @@ const indexStatusFlags =
   statusIndexDeleted |
   statusIndexRenamed |
   statusIndexTypeChange
+
+
+const IS_WINDOWS = process.platform === 'win32'
+
+// Given a path on disk (real or hypothetical), attempt to normalize it by
+// (optionally) resolving `realpath` and (if on Windows) converting all path
+// separators to forward slashes.
+function normalizePath (filePath, useRealpath = true) {
+  if (typeof filePath !== 'string') return filePath
+
+  if (useRealpath) {
+    filePath = realpath(filePath)
+  }
+  if (!IS_WINDOWS) return filePath
+  return realpath(filePath).replace(/\\/g, '/')
+}
+
+// Compare two paths to determine whether they resolve to the same file or
+// directory on disk.
+//
+// This is more complicated than it sounds — not just because of symlinks but
+// also because of files/directories on Windows possibly having both a short
+// name and a long name.
+function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = true) {
+  if (typeof pathA !== 'string' || typeof pathB !== 'string') {
+    return false
+  }
+
+  pathA = normalizePath(pathA, useRealpath)
+  pathB = normalizePath(pathB, useRealpath)
+
+  if (IS_WINDOWS || caseInsensitive) {
+    pathA = pathA.toLowerCase()
+    pathB = pathB.toLowerCase()
+  }
+
+  let result = pathA === pathB
+  if (result || !IS_WINDOWS) return result
+  if (!pathA.includes('~') && !pathB.includes('~')) {
+    return result
+  }
+
+  // If we get this far, we're on Windows and comparing two paths, at least one
+  // of which contains an 8.3 short name. The only obvious and reliable way to
+  // address this is to `statSync` both paths and verify their IDs are the
+  // same.
+  if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
+    return result
+  }
+  let statA = fs.statSync(pathA)
+  let statB = fs.statSync(pathB)
+
+  return statA.ino === statB.ino && statA.dev === statB.dev
+}
+
+// Returns whether `pathA` starts with `pathB` — i.e., whether `pathB` is equal
+// to `pathA` or else one of its ancestor directories.
+function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = true) {
+  if (IS_WINDOWS) {
+    pathA = normalizePath(pathA, useRealpath)
+    pathB = normalizePath(pathB, useRealpath)
+  }
+  if (caseInsensitive) {
+    pathA = pathA.toLowerCase()
+    pathB = pathB.toLowerCase()
+  }
+  if (!pathB.endsWith(`/`)) {
+    pathB = `${pathB}/`
+  }
+  return pathA.startsWith(pathB)
+}
 
 Repository.prototype.release = function () {
   for (let submodulePath in this.submodules) {
@@ -130,7 +211,7 @@ Repository.prototype.getAheadBehindCount = function (branch = 'HEAD') {
   return this.compareCommits(headCommit, upstreamCommit)
 }
 
-Repository.prototype.getAheadBehindCountAsync = function (branch = 'HEAD') {
+Repository.prototype.getAheadBehindCountAsync = async function (branch = 'HEAD') {
   if (branch !== 'HEAD' && !branch.startsWith('refs/heads/')) {
     branch = `refs/heads/${branch}`
   }
@@ -159,95 +240,80 @@ Repository.prototype.checkoutReference = function (branch, create) {
 Repository.prototype.relativize = function (filePath) {
   let workingDirectory
   if (!filePath) return filePath
+  filePath = realpathRecursive(filePath)
 
-  if (process.platform === 'win32') {
-    filePath = filePath.replace(/\\/g, '/')
-  } else {
-    if (filePath[0] !== '/') return filePath
+  if (!IS_WINDOWS && filePath[0] !== '/') {
+    return filePath
   }
 
-  if (this.caseInsensitiveFs) {
-    const lowerCasePath = filePath.toLowerCase()
-
-    workingDirectory = this.getWorkingDirectory()
-    if (workingDirectory) {
-      workingDirectory = workingDirectory.toLowerCase()
-      if (lowerCasePath.startsWith(`${workingDirectory}/`)) {
-        return filePath.substring(workingDirectory.length + 1)
-      } else if (lowerCasePath === workingDirectory) {
-        return ''
-      }
+  workingDirectory = this.getWorkingDirectory()
+  if (workingDirectory) {
+    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
+      return filePath.substring(workingDirectory.length + 1)
+    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
+      return ''
     }
+  }
 
-    if (this.openedWorkingDirectory) {
-      workingDirectory = this.openedWorkingDirectory.toLowerCase()
-      if (lowerCasePath.startsWith(`${workingDirectory}/`)) {
-        return filePath.substring(workingDirectory.length + 1)
-      } else if (lowerCasePath === workingDirectory) {
-        return ''
-      }
-    }
-  } else {
-    workingDirectory = this.getWorkingDirectory()
-    if (workingDirectory) {
-      if (filePath.startsWith(`${workingDirectory}/`)) {
-        return filePath.substring(workingDirectory.length + 1)
-      } else if (filePath === workingDirectory) {
-        return ''
-      }
-    }
-
-    if (this.openedWorkingDirectory) {
-      if (filePath.startsWith(`${this.openedWorkingDirectory}/`)) {
-        return filePath.substring(this.openedWorkingDirectory.length + 1)
-      } else if (filePath === this.openedWorkingDirectory) {
-        return ''
-      }
+  if (this.openedWorkingDirectory) {
+    workingDirectory = this.openedWorkingDirectory
+    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
+      return filePath.substring(workingDirectory.length + 1)
+    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
+      return ''
     }
   }
 
   return filePath
 }
 
-Repository.prototype.submoduleForPath = function (path) {
-  path = this.relativize(path)
-  if (!path) return null
+Repository.prototype.submoduleForPath = function (filePath) {
+  filePath = this.relativize(filePath)
+  if (!filePath) return null
 
   for (let submodulePath in this.submodules) {
     const submoduleRepo = this.submodules[submodulePath]
-    if (path === submodulePath) {
+    if (filePath === submodulePath) {
       return submoduleRepo
-    } else if (path.startsWith(`${submodulePath}/`)) {
-      path = path.substring(submodulePath.length + 1)
-      return submoduleRepo.submoduleForPath(path) || submoduleRepo
+    } else if (filePath.startsWith(`${submodulePath}/`)) {
+      filePath = filePath.substring(submodulePath.length + 1)
+      return submoduleRepo.submoduleForPath(filePath) || submoduleRepo
     }
   }
 
   return null
 }
 
-Repository.prototype.isWorkingDirectory = function (path) {
-  if (!path) return false
+Repository.prototype.isWorkingDirectory = function (dirPath) {
+  if (!dirPath) return false
+  dirPath = normalizePath(dirPath)
 
-  if (process.platform === 'win32') {
-    path = path.replace(/\\/g, '/')
-  } else {
-    if (path[0] !== '/') return false
+  if (!IS_WINDOWS && dirPath[0] !== '/') {
+    return false
   }
 
-  if (this.caseInsensitiveFs) {
-    const lowerCasePath = path.toLowerCase()
-    const workingDirectory = this.getWorkingDirectory()
-    if (workingDirectory && workingDirectory.toLowerCase() === lowerCasePath) return true
-    if (this.openedWorkingDirectory && this.openedWorkingDirectory.toLowerCase() === lowerCasePath) return true
-  } else {
-    return path === this.getWorkingDirectory() || path === this.openedWorkingDirectory
+  let workingDirectory = this.getWorkingDirectory()
+  if (workingDirectory && pathsAreEqual(workingDirectory, dirPath, this.caseInsensitiveFs)) {
+    return true
+  }
+
+  let openedWorkingDirectory = this.openedWorkingDirectory
+  if (openedWorkingDirectory && pathsAreEqual(openedWorkingDirectory, dirPath, this.caseInsensitiveFs)) {
+    return true
   }
 
   return false
 }
 
-const {getHeadAsync, getStatus, getStatusAsync, getStatusForPath} = Repository.prototype
+/**
+ * @typedef {import('./git.js').Repository & { getStatusForPath(path: string): number }} RepositoryProto
+ */
+const repositoryProto = /** @type {RepositoryProto} */ (Repository.prototype)
+const {getHeadAsync, getStatus, getStatusAsync, getStatusForPath} = repositoryProto
+
+// We don't document `getStatusForPath` because it's used only internally. But
+// that means TypeScript gets confused when we try to delete it.
+// @ts-expect-error
 delete Repository.prototype.getStatusForPath
 
 Repository.prototype.getStatusForPaths = function (paths) {
@@ -258,9 +324,9 @@ Repository.prototype.getStatusForPaths = function (paths) {
   }
 }
 
-Repository.prototype.getStatus = function (path) {
-  if (typeof path === 'string') {
-    return getStatusForPath.call(this, path)
+Repository.prototype.getStatus = function (filePath) {
+  if (typeof filePath === 'string') {
+    return getStatusForPath.call(this, filePath)
   } else {
     return getStatus.call(this)
   }
@@ -278,63 +344,135 @@ Repository.prototype.getStatusForPathsAsync = function (paths) {
   return performAsyncWork(this, done => getStatusAsync.call(this, done, paths))
 }
 
-function performAsyncWork (repo, fn) {
-  fn = promisify(fn)
+/**
+ * @template T
+ * @param {import('./git.js').Repository} repo
+ * @param {(done: NodeCallback<T>) => void} rawFn
+ * @returns {Promise<T>}
+ */
+function performAsyncWork (repo, rawFn) {
+  let fn = promisify(rawFn)
 
-  if (repo._lastAsyncPromise) {
-    repo._lastAsyncPromise = repo._lastAsyncPromise.then(fn, fn)
-  } else {
-    repo._lastAsyncPromise = fn()
-  }
-  return repo._lastAsyncPromise
+  let result = repo._lastAsyncPromise
+    ? repo._lastAsyncPromise.then(fn, fn)
+    : fn()
+
+  repo._lastAsyncPromise = result
+  return result
 }
 
+/**
+ * @template T
+ * @param {(cb: NodeCallback<T>) => void} fn
+ * @returns {() => Promise<T>}
+ */
 function promisify (fn) {
-  return () => new Promise((resolve, reject) =>
-    fn((error, result) => error ? reject(error) : resolve(result))
-  )
+  let promisified = () => {
+    /** @type {Promise<T>} */
+    let p = new Promise((resolve, reject) =>
+      fn((error, result) => error ? reject(error) : resolve(result))
+    )
+    return p
+  }
+  return promisified
 }
 
+/**
+ * Given `unrealPath` — which may or may not exist on disk in its current form
+ * — resolve to a real path on disk, if possible.
+ *
+ * This is done by traversing upward to the first directory that _does_ exist,
+ * then getting its `realpath` and appending the rest back on.
+ *
+ * @param {string} unrealPath
+ * @returns {string}
+ */
+function realpathRecursive (unrealPath) {
+  let currentPath = unrealPath
+  let result = unrealPath
+  let remainder = ''
+  if (!path.isAbsolute(unrealPath)) {
+    return realpath(unrealPath)
+  }
+  while (!isRootPath(currentPath)) {
+    try {
+      result = fs.realpathSync.native(currentPath)
+      break
+    } catch (e) {
+      if (e.message.includes('ENOENT')) {
+        currentPath = path.resolve(currentPath, '..')
+        remainder = path.relative(currentPath, unrealPath)
+      } else {
+        return unrealPath
+      }
+    }
+  }
+  if (isRootPath(currentPath)) {
+    return unrealPath
+  }
+  let finalResult = trimPath(`${result}/${remainder}`)
+  return normalizePath(finalResult)
+}
+
+/**
+ * Trim a trailing separator from a path.
+ * @param {string} filePath
+ * @returns {string}
+ */
+function trimPath (filePath) {
+  if (!filePath.endsWith('/')) return filePath
+  return filePath.replace(/\/$/, '')
+}
+
+/**
+ * Attempt to resolve a path to its real path on disk; if it fails, returns the
+ * original path.
+ * @param {string} unrealPath
+ * @returns {string}
+ */
 function realpath (unrealPath) {
   try {
+    // `fs.realpathSync.native` somehow is the only thing that can consistently
+    // normalize 8.3 "short names" in Windows to their long equivalents.
+    if (typeof fs.realpathSync.native === 'function') {
+      return fs.realpathSync.native(unrealPath)
+    }
     return fs.realpathSync(unrealPath)
   } catch (e) {
     return unrealPath
   }
 }
 
+/**
+ * Check whether the given path is the root — i.e., has no parent directory.
+ * @param {string} repositoryPath
+ * @returns {boolean}
+ */
 function isRootPath (repositoryPath) {
-  if (process.platform === 'win32') {
+  if (IS_WINDOWS) {
     return /^[a-zA-Z]+:[\\/]$/.test(repositoryPath)
   } else {
     return repositoryPath === path.sep
   }
 }
 
+/**
+ * @param {string} repositoryPath
+ * @param {boolean} search
+ * @returns {import('./git.js').Repository | null}
+ */
 function openRepository (repositoryPath, search) {
+  if (!fs.existsSync(repositoryPath)) return null
   const symlink = realpath(repositoryPath) !== repositoryPath
+  repositoryPath = normalizePath(repositoryPath, false)
 
-  if (process.platform === 'win32') {
-    repositoryPath = repositoryPath.replace(/\\/g, '/')
-  }
   const repository = new Repository(repositoryPath, search)
   if (repository.exists()) {
     repository.caseInsensitiveFs = fs.isCaseInsensitive()
     if (symlink) {
       const workingDirectory = repository.getWorkingDirectory()
-      // On Windows, normalize both sides through realpath so that 8.3 short
-      // names (e.g., RUNNER~1) and path separator differences don't prevent
-      // the comparison from matching. Compare case-insensitively because
-      // Windows paths are case-insensitive.
-      const normalizedWorkingDir = process.platform === 'win32'
-        ? realpath(workingDirectory).replace(/\\/g, '/').toLowerCase()
-        : workingDirectory
       while (!isRootPath(repositoryPath)) {
-        let realpathResult = realpath(repositoryPath)
-        if (process.platform === 'win32') {
-          realpathResult = realpathResult.replace(/\\/g, '/').toLowerCase()
-        }
-        if (realpathResult === normalizedWorkingDir) {
+        if (pathsAreEqual(repositoryPath, workingDirectory, fs.isCaseInsensitive())) {
           repository.openedWorkingDirectory = repositoryPath
           break
         }
@@ -347,12 +485,18 @@ function openRepository (repositoryPath, search) {
   }
 }
 
+/**
+ * @param {import('./git.js').Repository} repository
+ * @returns {void}
+ */
 function openSubmodules (repository) {
   repository.submodules = {}
 
   for (let relativePath of repository.getSubmodulePaths()) {
     if (relativePath) {
-      const submodulePath = path.join(repository.getWorkingDirectory(), relativePath)
+      let workingDirectory = repository.getWorkingDirectory()
+      if (!workingDirectory) throw new Error('Invalid repository')
+      const submodulePath = path.join(workingDirectory, relativePath)
       const submoduleRepo = openRepository(submodulePath, false)
       if (submoduleRepo) {
         if (submoduleRepo.getPath() === repository.getPath()) {
@@ -366,6 +510,7 @@ function openSubmodules (repository) {
   }
 }
 
+/** @type {typeof import('./git.js').open} */
 exports.open = function (repositoryPath, search = true) {
   const repository = openRepository(repositoryPath, search)
   if (repository) openSubmodules(repository)
