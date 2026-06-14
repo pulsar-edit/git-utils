@@ -28,11 +28,13 @@
     "vcs"
   ],
   "main": "./src/git.js",
+  "types": "./src/git.d.ts",
   "devDependencies": {
     "jasmine": "^5.4.0",
     "node-addon-api": "^8.2.1",
     "standard": "^10.0.3",
     "temp": "~0.9.4",
+    "ts-morph": "^28.0.0",
     "underscore": "~1.5.2",
     "wrench": "~1.4.4"
   },

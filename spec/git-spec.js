@@ -7,6 +7,7 @@ const temp = require('temp')
 const _ = require('underscore')
 
 describe('git', () => {
+  /** @type {import('../src/git').Repository | undefined} */
   let repo
 
   afterEach(() => repo?.release())

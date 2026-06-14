@@ -1,6 +1,16 @@
+// @ts-check
 const path = require('path')
 const fs = require('fs-plus')
-const {Repository} = require('../build/Release/git.node')
+
+/**
+ * @template T
+ * @typedef {(err: Error | null, result: T) => void} NodeCallback
+ */
+
+/** @type {{ Repository: typeof import('./git').Repository }} */
+// @ts-expect-error
+const bundle = require('../build/Release/git.node')
+const { Repository } = bundle
 
 const statusIndexNew = 1 << 0
 const statusIndexModified = 1 << 1
@@ -295,7 +305,15 @@ Repository.prototype.isWorkingDirectory = function (dirPath) {
   return false
 }
 
-const {getHeadAsync, getStatus, getStatusAsync, getStatusForPath} = Repository.prototype
+/**
+ * @typedef {import('./git.js').Repository & { getStatusForPath(path: string): number }} RepositoryProto
+ */
+const repositoryProto = /** @type {RepositoryProto} */ (Repository.prototype)
+const {getHeadAsync, getStatus, getStatusAsync, getStatusForPath} = repositoryProto
+
+// We don't document `getStatusForPath` because it's used only internally. But
+// that means TypeScript gets confused when we try to delete it.
+// @ts-expect-error
 delete Repository.prototype.getStatusForPath
 
 Repository.prototype.getStatusForPaths = function (paths) {
@@ -326,34 +344,55 @@ Repository.prototype.getStatusForPathsAsync = function (paths) {
   return performAsyncWork(this, done => getStatusAsync.call(this, done, paths))
 }
 
-function performAsyncWork (repo, fn) {
-  fn = promisify(fn)
+/**
+ * @template T
+ * @param {import('./git.js').Repository} repo
+ * @param {(done: NodeCallback<T>) => void} rawFn
+ * @returns {Promise<T>}
+ */
+function performAsyncWork (repo, rawFn) {
+  let fn = promisify(rawFn)
 
-  if (repo._lastAsyncPromise) {
-    repo._lastAsyncPromise = repo._lastAsyncPromise.then(fn, fn)
-  } else {
-    repo._lastAsyncPromise = fn()
-  }
-  return repo._lastAsyncPromise
+  let result = repo._lastAsyncPromise
+    ? repo._lastAsyncPromise.then(fn, fn)
+    : fn()
+
+  repo._lastAsyncPromise = result
+  return result
 }
 
+/**
+ * @template T
+ * @param {(cb: NodeCallback<T>) => void} fn
+ * @returns {() => Promise<T>}
+ */
 function promisify (fn) {
-  return () => new Promise((resolve, reject) =>
-    fn((error, result) => error ? reject(error) : resolve(result))
-  )
+  let promisified = () => {
+    /** @type {Promise<T>} */
+    let p = new Promise((resolve, reject) =>
+      fn((error, result) => error ? reject(error) : resolve(result))
+    )
+    return p
+  }
+  return promisified
 }
 
-// Given `unrealPath` — which may or may not exist on disk in its current form
-// — resolve to a real path on disk, if possible.
-//
-// This is done by traversing upward to the first directory that _does_ exist,
-// then getting its `realpath` and appending the rest back on.
+/**
+ * Given `unrealPath` — which may or may not exist on disk in its current form
+ * — resolve to a real path on disk, if possible.
+ *
+ * This is done by traversing upward to the first directory that _does_ exist,
+ * then getting its `realpath` and appending the rest back on.
+ *
+ * @param {string} unrealPath
+ * @returns {string}
+ */
 function realpathRecursive (unrealPath) {
   let currentPath = unrealPath
   let result = unrealPath
   let remainder = ''
   if (!path.isAbsolute(unrealPath)) {
-    return realpath(unrealPath, true)
+    return realpath(unrealPath)
   }
   while (!isRootPath(currentPath)) {
     try {
@@ -375,13 +414,22 @@ function realpathRecursive (unrealPath) {
   return normalizePath(finalResult)
 }
 
+/**
+ * Trim a trailing separator from a path.
+ * @param {string} filePath
+ * @returns {string}
+ */
 function trimPath (filePath) {
   if (!filePath.endsWith('/')) return filePath
   return filePath.replace(/\/$/, '')
 }
 
-// Attempts to resolve a path to its real path on disk; if it fails, returns
-// the original path.
+/**
+ * Attempt to resolve a path to its real path on disk; if it fails, returns the
+ * original path.
+ * @param {string} unrealPath
+ * @returns {string}
+ */
 function realpath (unrealPath) {
   try {
     // `fs.realpathSync.native` somehow is the only thing that can consistently
@@ -395,7 +443,11 @@ function realpath (unrealPath) {
   }
 }
 
-// Returns whether the path has no parent directory.
+/**
+ * Check whether the given path is the root — i.e., has no parent directory.
+ * @param {string} repositoryPath
+ * @returns {boolean}
+ */
 function isRootPath (repositoryPath) {
   if (IS_WINDOWS) {
     return /^[a-zA-Z]+:[\\/]$/.test(repositoryPath)
@@ -404,6 +456,11 @@ function isRootPath (repositoryPath) {
   }
 }
 
+/**
+ * @param {string} repositoryPath
+ * @param {boolean} search
+ * @returns {import('./git.js').Repository | null}
+ */
 function openRepository (repositoryPath, search) {
   if (!fs.existsSync(repositoryPath)) return null
   const symlink = realpath(repositoryPath) !== repositoryPath
@@ -428,12 +485,18 @@ function openRepository (repositoryPath, search) {
   }
 }
 
+/**
+ * @param {import('./git.js').Repository} repository
+ * @returns {void}
+ */
 function openSubmodules (repository) {
   repository.submodules = {}
 
   for (let relativePath of repository.getSubmodulePaths()) {
     if (relativePath) {
-      const submodulePath = path.join(repository.getWorkingDirectory(), relativePath)
+      let workingDirectory = repository.getWorkingDirectory()
+      if (!workingDirectory) throw new Error('Invalid repository')
+      const submodulePath = path.join(workingDirectory, relativePath)
       const submoduleRepo = openRepository(submodulePath, false)
       if (submoduleRepo) {
         if (submoduleRepo.getPath() === repository.getPath()) {
@@ -447,6 +510,7 @@ function openSubmodules (repository) {
   }
 }
 
+/** @type {typeof import('./git.js').open} */
 exports.open = function (repositoryPath, search = true) {
   const repository = openRepository(repositoryPath, search)
   if (repository) openSubmodules(repository)
