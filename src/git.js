@@ -69,6 +69,8 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
 
   let result = pathA === pathB
   if (result || !IS_WINDOWS) return result
+  // If neither path includes an 8.3 short name, we can skip some paranoid
+  // path equality checks.
   if (!pathA.includes('~') && !pathB.includes('~')) {
     return result
   }
