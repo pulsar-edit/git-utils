@@ -121,25 +121,51 @@ function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = tr
   return pathA.startsWith(pathB)
 }
 
+// Convert Windows path separators to forward slashes. Purely a string
+// operation — unlike `normalizePath`, this never touches the filesystem.
+function toSlashes (filePath) {
+  return IS_WINDOWS ? filePath.replace(/\\/g, '/') : filePath
+}
+
 // If `filePath` lies within `workingDirectory`, return its path relative to
 // that directory; otherwise return `null`.
 //
-// Both paths are normalized up front, and the slice below is taken against
-// those normalized values rather than the originals. That matters because
-// normalization can change a path's *length* — an 8.3 short name expanding to
-// its long form, for instance — so matching on the normalized paths but
-// slicing by the raw working directory's length would silently produce a
-// corrupt relative path.
+// This compares the two as plain strings and does no filesystem access of its
+// own; both arguments must already be in the same form. Note that the slice
+// below is taken against `workingDirectory` *after* any trailing slash is
+// removed, since matching on one value and slicing by the length of another is
+// how you produce a silently corrupt relative path.
 function relativizeAgainst (filePath, workingDirectory, caseInsensitive) {
-  filePath = normalizePath(filePath, false)
-  workingDirectory = normalizePath(workingDirectory, false)
+  let comparablePath = filePath
+  let comparableWorkingDirectory = trimPath(workingDirectory)
 
-  if (pathStartsWith(filePath, workingDirectory, caseInsensitive, false)) {
-    return filePath.substring(trimPath(workingDirectory).length + 1)
-  } else if (pathsAreEqual(filePath, workingDirectory, caseInsensitive, false)) {
-    return ''
+  if (IS_WINDOWS || caseInsensitive) {
+    comparablePath = comparablePath.toLowerCase()
+    comparableWorkingDirectory = comparableWorkingDirectory.toLowerCase()
+  }
+
+  if (comparablePath === comparableWorkingDirectory) return ''
+  if (comparablePath.startsWith(`${comparableWorkingDirectory}/`)) {
+    return filePath.substring(comparableWorkingDirectory.length + 1)
   }
   return null
+}
+
+// The working directories a path may be relativized against, in canonical
+// (symlink- and short-name-resolved) form.
+//
+// Resolving these means touching the filesystem, but they can't change while
+// the repository is open — so we do it once, on the first call that actually
+// needs it, and remember the answer rather than paying for it on every
+// `relativize`.
+function canonicalWorkingDirectories (repository) {
+  if (!repository.canonicalWorkingDirectories) {
+    repository.canonicalWorkingDirectories = [
+      repository.getWorkingDirectory(),
+      repository.openedWorkingDirectory
+    ].filter(Boolean).map(workingDirectory => normalizePath(workingDirectory))
+  }
+  return repository.canonicalWorkingDirectories
 }
 
 Repository.prototype.release = function () {
@@ -268,15 +294,35 @@ Repository.prototype.checkoutReference = function (branch, create) {
 
 Repository.prototype.relativize = function (filePath) {
   if (!filePath) return filePath
-  filePath = realpathRecursive(filePath)
+  filePath = toSlashes(filePath)
 
   if (!IS_WINDOWS && filePath[0] !== '/') {
     return filePath
   }
 
+  // Fast path: compare as plain strings, touching the filesystem not at all.
+  // This is what succeeds for nearly every call, since the path we're handed
+  // and the working directory are usually already in the same form.
   for (let workingDirectory of [this.getWorkingDirectory(), this.openedWorkingDirectory]) {
     if (!workingDirectory) continue
-    const relativePath = relativizeAgainst(filePath, workingDirectory, this.caseInsensitiveFs)
+    const relativePath = relativizeAgainst(
+      filePath,
+      toSlashes(workingDirectory),
+      this.caseInsensitiveFs
+    )
+    if (relativePath !== null) return relativePath
+  }
+
+  // Slow path: the strings didn't match, but they may still name the same
+  // place — through a symlink, or an 8.3 short name on Windows. Resolve both
+  // sides for real and try once more.
+  //
+  // A miss costs roughly what *every* call used to cost, so this is no worse
+  // than the previous behavior in the worst case, while a hit above now costs
+  // nothing at all.
+  const realFilePath = realpathRecursive(filePath)
+  for (let workingDirectory of canonicalWorkingDirectories(this)) {
+    const relativePath = relativizeAgainst(realFilePath, workingDirectory, this.caseInsensitiveFs)
     if (relativePath !== null) return relativePath
   }
 
@@ -400,8 +446,13 @@ function realpathRecursive (unrealPath) {
   if (result === null) {
     return unrealPath
   }
-  let finalResult = trimPath(`${result}/${remainder}`)
-  return normalizePath(finalResult)
+  // `toSlashes` rather than `normalizePath`: resolving this again could never
+  // find anything new. Either the loop broke immediately, in which case
+  // `result` is already resolved and `remainder` is empty, or it climbed — and
+  // it only climbs past a level that reported ENOENT, so the tail we just
+  // reattached is known not to exist. All that's left to do is fix up the
+  // separators.
+  return toSlashes(trimPath(`${result}/${remainder}`))
 }
 
 function trimPath (filePath) {

@@ -990,6 +990,38 @@ describe('git', () => {
       })
     })
 
+    describe('when the path is resolved through a symlink it was not opened by', () => {
+      it('relativizes paths that do not exist on disk', () => {
+        // Creating a symlink on Windows requires administrator permission, so
+        // we just skip this test.
+        if (process.platform === 'win32') { return }
+
+        const repoDirectory = fs.realpathSync(temp.mkdirSync('node-git-repo-'))
+        const linkDirectory = path.join(fs.realpathSync(temp.mkdirSync('node-git-repo-')), 'link')
+        wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
+        fs.mkdirSync(path.join(repoDirectory, 'real-dir'))
+        fs.symlinkSync(repoDirectory, linkDirectory)
+
+        // Opening by the real path means `openedWorkingDirectory` is never
+        // set, so a query through the symlink cannot be satisfied by comparing
+        // strings — it has to be resolved against the filesystem.
+        repo = git.open(repoDirectory)
+        expect(repo.openedWorkingDirectory).toBeUndefined()
+
+        // None of these paths exist, which is the point: resolving a path
+        // can only be done against something that does exist, so this has to
+        // walk up to the nearest real ancestor and reattach the rest. That is
+        // the same machinery that expands 8.3 short names on Windows.
+        expect(repo.relativize(path.join(linkDirectory, 'ghost.txt'))).toBe('ghost.txt')
+        expect(repo.relativize(path.join(linkDirectory, 'real-dir/ghost.txt'))).toBe('real-dir/ghost.txt')
+        expect(repo.relativize(path.join(linkDirectory, 'a/b/c/ghost.txt'))).toBe('a/b/c/ghost.txt')
+
+        // The directory itself, and something genuinely outside the repo.
+        expect(repo.relativize(linkDirectory)).toBe('')
+        expect(repo.relativize('/not/in/working/dir')).toBe('/not/in/working/dir')
+      })
+    })
+
     it('handles case insensitive filesystems', () => {
       const repoDirectory = temp.mkdirSync('lower-case-repo-')
       wrench.copyDirSyncRecursive(path.join(__dirname, 'fixtures/master.git'), path.join(repoDirectory, '.git'))
