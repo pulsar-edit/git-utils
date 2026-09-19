@@ -20,7 +20,7 @@ jobs:
               CC: clang
               CXX: clang++
               npm_config_clang: 1
-          - os: windows-latest
+          - os: windows-2022
             env: {}
           - os: macos-latest
             env:
@@ -40,5 +40,12 @@ jobs:
         run: |
           npm run prepare
           npm install
+      # Diagnostic only. The specs build their repositories under `os.tmpdir()`,
+      # so this reports whether the runner hands us that path in 8.3 short form
+      # (e.g. `RUNNER~1`) or behind a symlink — the cases `relativize` has to
+      # resolve. Without this, a green run tells us nothing about whether those
+      # paths were ever exercised.
+      - name: Report path forms
+        run: node -e "const os=require('os'),fs=require('fs');const show=(l,p)=>{let r;try{r=fs.realpathSync.native(p)}catch(e){r='<'+e.code+'>'}console.log(l.padEnd(8),JSON.stringify(p),'->',JSON.stringify(r),/~[0-9]/.test(p)?'[8.3 SHORT NAME]':'',r!==p?'[DIFFERS]':'')};show('tmpdir',os.tmpdir());show('cwd',process.cwd());show('homedir',os.homedir())"
       - name: Run tests
         run: npm test
