@@ -38,6 +38,16 @@ const IS_WINDOWS = process.platform === 'win32'
 // Given a path on disk (real or hypothetical), attempt to normalize it by
 // (optionally) resolving `realpath` and (if on Windows) converting all path
 // separators to forward slashes.
+//
+// Note that `useRealpath: false` is only honored off Windows. On Windows we
+// resolve `realpath` unconditionally, and that is deliberate rather than an
+// oversight: a path we haven't resolved may still be in 8.3 short form, and a
+// short path compares unequal to its own long form no matter how carefully we
+// normalize case and separators. Callers pass `useRealpath: false` to skip
+// work they believe is redundant, but on Windows it isn't redundant — skipping
+// it would make paths like `C:/Users/RUNNER~1/repo` fail to match the very
+// directory they name. See `realpath` for why `realpathSync.native` is the
+// thing that expands them.
 function normalizePath (filePath, useRealpath = true) {
   if (typeof filePath !== 'string') return filePath
 
@@ -366,25 +376,28 @@ function promisify (fn) {
 // then getting its `realpath` and appending the rest back on.
 function realpathRecursive (unrealPath) {
   let currentPath = unrealPath
-  let result = unrealPath
+  let result = null
   let remainder = ''
   if (!path.isAbsolute(unrealPath)) {
     return realpath(unrealPath)
   }
-  while (!isRootPath(currentPath)) {
+  let parent = parentPath(currentPath)
+  while (parent !== null) {
     try {
       result = fs.realpathSync.native(currentPath)
       break
     } catch (e) {
       if (e.code === 'ENOENT') {
-        currentPath = path.resolve(currentPath, '..')
+        currentPath = parent
         remainder = path.relative(currentPath, unrealPath)
+        parent = parentPath(currentPath)
       } else {
         return unrealPath
       }
     }
   }
-  if (isRootPath(currentPath)) {
+  // We climbed all the way to a root without resolving anything.
+  if (result === null) {
     return unrealPath
   }
   let finalResult = trimPath(`${result}/${remainder}`)
@@ -411,13 +424,19 @@ function realpath (unrealPath) {
   }
 }
 
-// Returns whether the path has no parent directory.
-function isRootPath (repositoryPath) {
-  if (IS_WINDOWS) {
-    return /^[a-zA-Z]+:[\\/]$/.test(repositoryPath)
-  } else {
-    return repositoryPath === path.sep
-  }
+// Returns the parent of `filePath`, or `null` when `filePath` is already a
+// root and therefore has no parent.
+//
+// We ask `path.resolve` whether it can still move upward rather than trying to
+// recognize root paths by their shape. Enumerating root *syntaxes* means every
+// form we forget is an infinite loop in the callers below, and Windows has
+// more of them than the obvious `C:\`: UNC shares (`\\server\share`) and
+// device paths (`\\?\C:\`) among them. Resolving to the same path we
+// started from is the general signal that we've hit the top, whatever the
+// shape.
+function parentPath (filePath) {
+  const parent = path.resolve(filePath, '..')
+  return parent === filePath ? null : parent
 }
 
 function openRepository (repositoryPath, search) {
@@ -430,12 +449,14 @@ function openRepository (repositoryPath, search) {
     repository.caseInsensitiveFs = fs.isCaseInsensitive()
     if (symlink) {
       const workingDirectory = repository.getWorkingDirectory()
-      while (!isRootPath(repositoryPath)) {
+      let parent = parentPath(repositoryPath)
+      while (parent !== null) {
         if (pathsAreEqual(repositoryPath, workingDirectory, fs.isCaseInsensitive())) {
           repository.openedWorkingDirectory = repositoryPath
           break
         }
-        repositoryPath = path.resolve(repositoryPath, '..')
+        repositoryPath = parent
+        parent = parentPath(repositoryPath)
       }
     }
     return repository
