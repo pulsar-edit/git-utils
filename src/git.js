@@ -43,11 +43,16 @@ const IS_WINDOWS = process.platform === 'win32'
 // resolve `realpath` unconditionally, and that is deliberate rather than an
 // oversight: a path we haven't resolved may still be in 8.3 short form, and a
 // short path compares unequal to its own long form no matter how carefully we
-// normalize case and separators. Callers pass `useRealpath: false` to skip
-// work they believe is redundant, but on Windows it isn't redundant — skipping
-// it would make paths like `C:/Users/RUNNER~1/repo` fail to match the very
-// directory they name. See `realpath` for why `realpathSync.native` is the
-// thing that expands them.
+// normalize case and separators. See `realpath` for why `realpathSync.native`
+// is the thing that expands them.
+//
+// The consequence is that on Windows there is no way to ask this for
+// separator conversion alone. `openRepository` wants exactly that — it passes
+// `false` to keep the path the caller opened with, rather than the resolved
+// one — so on Windows its `openedWorkingDirectory` ends up resolved anyway.
+// That costs us nothing today, since a resolved path is still a correct one to
+// compare against, but it's the reason this flag can't simply be trusted. Use
+// `toSlashes` when you want separator conversion and nothing else.
 function normalizePath (filePath, useRealpath = true) {
   if (typeof filePath !== 'string') return filePath
 
@@ -102,23 +107,6 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
     // plain string comparison.
     return result
   }
-}
-
-// Returns whether `pathA` starts with `pathB` — i.e., whether `pathB` is equal
-// to `pathA` or else one of its ancestor directories.
-function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = true) {
-  if (IS_WINDOWS) {
-    pathA = normalizePath(pathA, useRealpath)
-    pathB = normalizePath(pathB, useRealpath)
-  }
-  if (caseInsensitive) {
-    pathA = pathA.toLowerCase()
-    pathB = pathB.toLowerCase()
-  }
-  if (!pathB.endsWith(`/`)) {
-    pathB = `${pathB}/`
-  }
-  return pathA.startsWith(pathB)
 }
 
 // Convert Windows path separators to forward slashes. Purely a string
