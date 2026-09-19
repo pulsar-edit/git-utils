@@ -79,13 +79,19 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
   // of which contains an 8.3 short name. The only obvious and reliable way to
   // address this is to `statSync` both paths and verify their IDs are the
   // same.
-  if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
+  //
+  // The `bigint` option matters here: without it, Windows file indices are
+  // returned as ordinary numbers and can silently lose precision, which would
+  // make two distinct files compare as equal.
+  try {
+    const statA = fs.statSync(pathA, { bigint: true })
+    const statB = fs.statSync(pathB, { bigint: true })
+    return statA.ino === statB.ino && statA.dev === statB.dev
+  } catch (e) {
+    // Either path may not exist (or may not be readable); fall back to the
+    // plain string comparison.
     return result
   }
-  let statA = fs.statSync(pathA)
-  let statB = fs.statSync(pathB)
-
-  return statA.ino === statB.ino && statA.dev === statB.dev
 }
 
 // Returns whether `pathA` starts with `pathB` — i.e., whether `pathB` is equal
@@ -103,6 +109,27 @@ function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = tr
     pathB = `${pathB}/`
   }
   return pathA.startsWith(pathB)
+}
+
+// If `filePath` lies within `workingDirectory`, return its path relative to
+// that directory; otherwise return `null`.
+//
+// Both paths are normalized up front, and the slice below is taken against
+// those normalized values rather than the originals. That matters because
+// normalization can change a path's *length* — an 8.3 short name expanding to
+// its long form, for instance — so matching on the normalized paths but
+// slicing by the raw working directory's length would silently produce a
+// corrupt relative path.
+function relativizeAgainst (filePath, workingDirectory, caseInsensitive) {
+  filePath = normalizePath(filePath, false)
+  workingDirectory = normalizePath(workingDirectory, false)
+
+  if (pathStartsWith(filePath, workingDirectory, caseInsensitive, false)) {
+    return filePath.substring(trimPath(workingDirectory).length + 1)
+  } else if (pathsAreEqual(filePath, workingDirectory, caseInsensitive, false)) {
+    return ''
+  }
+  return null
 }
 
 Repository.prototype.release = function () {
@@ -230,7 +257,6 @@ Repository.prototype.checkoutReference = function (branch, create) {
 }
 
 Repository.prototype.relativize = function (filePath) {
-  let workingDirectory
   if (!filePath) return filePath
   filePath = realpathRecursive(filePath)
 
@@ -238,22 +264,10 @@ Repository.prototype.relativize = function (filePath) {
     return filePath
   }
 
-  workingDirectory = this.getWorkingDirectory()
-  if (workingDirectory) {
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
-    }
-  }
-
-  if (this.openedWorkingDirectory) {
-    workingDirectory = this.openedWorkingDirectory
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
-    }
+  for (let workingDirectory of [this.getWorkingDirectory(), this.openedWorkingDirectory]) {
+    if (!workingDirectory) continue
+    const relativePath = relativizeAgainst(filePath, workingDirectory, this.caseInsensitiveFs)
+    if (relativePath !== null) return relativePath
   }
 
   return filePath
@@ -355,14 +369,14 @@ function realpathRecursive (unrealPath) {
   let result = unrealPath
   let remainder = ''
   if (!path.isAbsolute(unrealPath)) {
-    return realpath(unrealPath, true)
+    return realpath(unrealPath)
   }
   while (!isRootPath(currentPath)) {
     try {
       result = fs.realpathSync.native(currentPath)
       break
     } catch (e) {
-      if (e.message.includes('ENOENT')) {
+      if (e.code === 'ENOENT') {
         currentPath = path.resolve(currentPath, '..')
         remainder = path.relative(currentPath, unrealPath)
       } else {
