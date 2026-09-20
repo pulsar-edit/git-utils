@@ -76,7 +76,7 @@ export interface Reference {
   tags: string[];
 }
 
-export class Repository {
+declare class Repository {
   /** @private */
   constructor(path: string, search?: boolean);
 
@@ -551,4 +551,10 @@ export class Repository {
  *  repository.
  * @returns A {@link Repository} if one was found; `null` otherwise.
  */
+// `Repository` is exported as a type only. The runtime module exports just
+// `open`; instances come from it, and the constructor is private. Declaring it
+// as an exported class would tell TypeScript there's a runtime value here,
+// making `import { Repository }` type-check and then fail in Node ESM.
+export type { Repository }
+
 export function open(repositoryPath: string, search?: boolean): Repository | null
