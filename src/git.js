@@ -48,6 +48,21 @@ const IS_WINDOWS = process.platform === 'win32'
 // Given a path on disk (real or hypothetical), attempt to normalize it by
 // (optionally) resolving `realpath` and (if on Windows) converting all path
 // separators to forward slashes.
+//
+// Note that `useRealpath: false` is only honored off Windows. On Windows we
+// resolve `realpath` unconditionally, and that is deliberate rather than an
+// oversight: a path we haven't resolved may still be in 8.3 short form, and a
+// short path compares unequal to its own long form no matter how carefully we
+// normalize case and separators. See `realpath` for why `realpathSync.native`
+// is the thing that expands them.
+//
+// The consequence is that on Windows there is no way to ask this for
+// separator conversion alone. `openRepository` wants exactly that — it passes
+// `false` to keep the path the caller opened with, rather than the resolved
+// one — so on Windows its `openedWorkingDirectory` ends up resolved anyway.
+// That costs us nothing today, since a resolved path is still a correct one to
+// compare against, but it's the reason this flag can't simply be trusted. Use
+// `toSlashes` when you want separator conversion and nothing else.
 function normalizePath (filePath, useRealpath = true) {
   if (typeof filePath !== 'string') return filePath
 
@@ -79,6 +94,8 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
 
   let result = pathA === pathB
   if (result || !IS_WINDOWS) return result
+  // If neither path includes an 8.3 short name, we can skip some paranoid
+  // path equality checks.
   if (!pathA.includes('~') && !pathB.includes('~')) {
     return result
   }
@@ -87,30 +104,66 @@ function pathsAreEqual (pathA, pathB, caseInsensitive = false, useRealpath = tru
   // of which contains an 8.3 short name. The only obvious and reliable way to
   // address this is to `statSync` both paths and verify their IDs are the
   // same.
-  if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
+  //
+  // The `bigint` option matters here: without it, Windows file indices are
+  // returned as ordinary numbers and can silently lose precision, which would
+  // make two distinct files compare as equal.
+  try {
+    const statA = fs.statSync(pathA, { bigint: true })
+    const statB = fs.statSync(pathB, { bigint: true })
+    return statA.ino === statB.ino && statA.dev === statB.dev
+  } catch (e) {
+    // Either path may not exist (or may not be readable); fall back to the
+    // plain string comparison.
     return result
   }
-  let statA = fs.statSync(pathA)
-  let statB = fs.statSync(pathB)
-
-  return statA.ino === statB.ino && statA.dev === statB.dev
 }
 
-// Returns whether `pathA` starts with `pathB` — i.e., whether `pathB` is equal
-// to `pathA` or else one of its ancestor directories.
-function pathStartsWith (pathA, pathB, caseInsensitive = false, useRealpath = true) {
-  if (IS_WINDOWS) {
-    pathA = normalizePath(pathA, useRealpath)
-    pathB = normalizePath(pathB, useRealpath)
+// Convert Windows path separators to forward slashes. Purely a string
+// operation — unlike `normalizePath`, this never touches the filesystem.
+function toSlashes (filePath) {
+  return IS_WINDOWS ? filePath.replace(/\\/g, '/') : filePath
+}
+
+// If `filePath` lies within `workingDirectory`, return its path relative to
+// that directory; otherwise return `null`.
+//
+// This compares the two as plain strings and does no filesystem access of its
+// own; both arguments must already be in the same form. Note that the slice
+// below is taken against `workingDirectory` *after* any trailing slash is
+// removed, since matching on one value and slicing by the length of another is
+// how you produce a silently corrupt relative path.
+function relativizeAgainst (filePath, workingDirectory, caseInsensitive) {
+  let comparablePath = filePath
+  let comparableWorkingDirectory = trimPath(workingDirectory)
+
+  if (IS_WINDOWS || caseInsensitive) {
+    comparablePath = comparablePath.toLowerCase()
+    comparableWorkingDirectory = comparableWorkingDirectory.toLowerCase()
   }
-  if (caseInsensitive) {
-    pathA = pathA.toLowerCase()
-    pathB = pathB.toLowerCase()
+
+  if (comparablePath === comparableWorkingDirectory) return ''
+  if (comparablePath.startsWith(`${comparableWorkingDirectory}/`)) {
+    return filePath.substring(comparableWorkingDirectory.length + 1)
   }
-  if (!pathB.endsWith(`/`)) {
-    pathB = `${pathB}/`
+  return null
+}
+
+// The working directories a path may be relativized against, in canonical
+// (symlink- and short-name-resolved) form.
+//
+// Resolving these means touching the filesystem, but they can't change while
+// the repository is open — so we do it once, on the first call that actually
+// needs it, and remember the answer rather than paying for it on every
+// `relativize`.
+function canonicalWorkingDirectories (repository) {
+  if (!repository.canonicalWorkingDirectories) {
+    repository.canonicalWorkingDirectories = [
+      repository.getWorkingDirectory(),
+      repository.openedWorkingDirectory
+    ].filter(Boolean).map(workingDirectory => normalizePath(workingDirectory))
   }
-  return pathA.startsWith(pathB)
+  return repository.canonicalWorkingDirectories
 }
 
 Repository.prototype.release = function () {
@@ -238,30 +291,37 @@ Repository.prototype.checkoutReference = function (branch, create) {
 }
 
 Repository.prototype.relativize = function (filePath) {
-  let workingDirectory
   if (!filePath) return filePath
-  filePath = realpathRecursive(filePath)
+  filePath = toSlashes(filePath)
 
   if (!IS_WINDOWS && filePath[0] !== '/') {
     return filePath
   }
 
-  workingDirectory = this.getWorkingDirectory()
-  if (workingDirectory) {
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
-    }
+  // Fast path: compare as plain strings, touching the filesystem not at all.
+  // This is what succeeds for nearly every call, since the path we're handed
+  // and the working directory are usually already in the same form.
+  for (let workingDirectory of [this.getWorkingDirectory(), this.openedWorkingDirectory]) {
+    if (!workingDirectory) continue
+    const relativePath = relativizeAgainst(
+      filePath,
+      toSlashes(workingDirectory),
+      this.caseInsensitiveFs
+    )
+    if (relativePath !== null) return relativePath
   }
 
-  if (this.openedWorkingDirectory) {
-    workingDirectory = this.openedWorkingDirectory
-    if (pathStartsWith(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return filePath.substring(workingDirectory.length + 1)
-    } else if (pathsAreEqual(filePath, workingDirectory, this.caseInsensitiveFs, false)) {
-      return ''
-    }
+  // Slow path: the strings didn't match, but they may still name the same
+  // place — through a symlink, or an 8.3 short name on Windows. Resolve both
+  // sides for real and try once more.
+  //
+  // A miss costs roughly what *every* call used to cost, so this is no worse
+  // than the previous behavior in the worst case, while a hit above now costs
+  // nothing at all.
+  const realFilePath = realpathRecursive(filePath)
+  for (let workingDirectory of canonicalWorkingDirectories(this)) {
+    const relativePath = relativizeAgainst(realFilePath, workingDirectory, this.caseInsensitiveFs)
+    if (relativePath !== null) return relativePath
   }
 
   return filePath
@@ -389,29 +449,37 @@ function promisify (fn) {
  */
 function realpathRecursive (unrealPath) {
   let currentPath = unrealPath
-  let result = unrealPath
+  let result = null
   let remainder = ''
   if (!path.isAbsolute(unrealPath)) {
     return realpath(unrealPath)
   }
-  while (!isRootPath(currentPath)) {
+  let parent = parentPath(currentPath)
+  while (parent !== null) {
     try {
       result = fs.realpathSync.native(currentPath)
       break
     } catch (e) {
-      if (e.message.includes('ENOENT')) {
-        currentPath = path.resolve(currentPath, '..')
+      if (e.code === 'ENOENT') {
+        currentPath = parent
         remainder = path.relative(currentPath, unrealPath)
+        parent = parentPath(currentPath)
       } else {
         return unrealPath
       }
     }
   }
-  if (isRootPath(currentPath)) {
+  // We climbed all the way to a root without resolving anything.
+  if (result === null) {
     return unrealPath
   }
-  let finalResult = trimPath(`${result}/${remainder}`)
-  return normalizePath(finalResult)
+  // `toSlashes` rather than `normalizePath`: resolving this again could never
+  // find anything new. Either the loop broke immediately, in which case
+  // `result` is already resolved and `remainder` is empty, or it climbed — and
+  // it only climbs past a level that reported ENOENT, so the tail we just
+  // reattached is known not to exist. All that's left to do is fix up the
+  // separators.
+  return toSlashes(trimPath(`${result}/${remainder}`))
 }
 
 /**
@@ -444,16 +512,15 @@ function realpath (unrealPath) {
 }
 
 /**
- * Check whether the given path is the root — i.e., has no parent directory.
- * @param {string} repositoryPath
- * @returns {boolean}
+ * Returns the parent of `filePath`, or `null` when `filePath` is already a
+ * root and therefore has no parent.
+ *
+ * @param {string} filePath
+ * @returns {string | null}
  */
-function isRootPath (repositoryPath) {
-  if (IS_WINDOWS) {
-    return /^[a-zA-Z]+:[\\/]$/.test(repositoryPath)
-  } else {
-    return repositoryPath === path.sep
-  }
+function parentPath (filePath) {
+  const parent = path.resolve(filePath, '..')
+  return parent === filePath ? null : parent
 }
 
 /**
@@ -471,12 +538,14 @@ function openRepository (repositoryPath, search) {
     repository.caseInsensitiveFs = fs.isCaseInsensitive()
     if (symlink) {
       const workingDirectory = repository.getWorkingDirectory()
-      while (!isRootPath(repositoryPath)) {
+      let parent = parentPath(repositoryPath)
+      while (parent !== null) {
         if (pathsAreEqual(repositoryPath, workingDirectory, fs.isCaseInsensitive())) {
           repository.openedWorkingDirectory = repositoryPath
           break
         }
-        repositoryPath = path.resolve(repositoryPath, '..')
+        repositoryPath = parent
+        parent = parentPath(repositoryPath)
       }
     }
     return repository
